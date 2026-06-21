@@ -1,0 +1,10 @@
+# 빌드 산출물
+*.o
+*.bin
+*.elf
+*.iso
+*.img
+*.map
+
+# Claude Code 로컬 설정
+.claude/settings.local.json
