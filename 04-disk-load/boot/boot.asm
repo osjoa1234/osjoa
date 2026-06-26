@@ -8,6 +8,7 @@ start:
     mov es, ax
     mov ss, ax
     mov sp, 0x7C00
+    mov [boot_drive], dl
 
     mov si, msg
     call print
@@ -23,6 +24,30 @@ start:
     cmp word [0x0500], 0x4321
     je a20_fail
 
+    xor ax, ax
+    mov es, ax
+
+    mov byte [retries], 3
+.disk_retry:
+    mov ah, 0x02
+    mov al, 1
+    mov ch, 0
+    mov cl, 2
+    mov dh, 0
+    mov dl, [boot_drive]
+    mov bx, stage2
+    int 0x13
+    jnc disk_ok
+    xor ah, ah
+    mov dl, [boot_drive]
+    int 0x13
+    dec byte [retries]
+    jnz .disk_retry
+    mov si, msg_disk_fail
+    call print
+    jmp $
+
+disk_ok:
     lgdt [gdt_descriptor]
 
     mov eax, cr0
@@ -48,7 +73,29 @@ print:
 .done:
     ret
 
+gdt_start:
+    dd 0x00000000, 0x00000000
+gdt_code:
+    dd 0x0000FFFF, 0x00CF9A00
+gdt_data:
+    dd 0x0000FFFF, 0x00CF9200
+gdt_end:
+
+gdt_descriptor:
+    dw gdt_end - gdt_start - 1
+    dd gdt_start
+
+boot_drive    db 0
+retries       db 0
+msg           db "Hello world -- real mode (16-bit)", 0x0D, 0x0A, 0
+msg_a20_fail  db "A20 enable failed -- still wrapping at 1MB", 0
+msg_disk_fail db "Disk read failed -- stage2 not loaded", 0
+
+times 510-($-$$) db 0
+dw 0xAA55
+
 BITS 32
+stage2:
 protected_start:
     mov ax, 0x10
     mov ds, ax
@@ -77,21 +124,6 @@ protected_start:
     hlt
     jmp .hang
 
-gdt_start:
-    dd 0x00000000, 0x00000000
-gdt_code:
-    dd 0x0000FFFF, 0x00CF9A00
-gdt_data:
-    dd 0x0000FFFF, 0x00CF9200
-gdt_end:
+msg_pm db "Hello world -- protected mode (32-bit), loaded from disk", 0
 
-gdt_descriptor:
-    dw gdt_end - gdt_start - 1
-    dd gdt_start
-
-msg          db "Hello world -- real mode (16-bit)", 0x0D, 0x0A, 0
-msg_pm       db "Hello world -- protected mode (32-bit), A20 enabled", 0
-msg_a20_fail db "A20 enable failed -- still wrapping at 1MB", 0
-
-times 510-($-$$) db 0
-dw 0xAA55
+times 1024-($-$$) db 0

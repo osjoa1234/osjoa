@@ -3,7 +3,7 @@
 **목표**: 16비트 real mode에서 32비트 보호모드로 전환한다.
 GDT(Global Descriptor Table)를 정의하고 `cr0`의 PE 비트를 세운 뒤 far jump으로 CS를 갈아끼운다. 보호모드에서는 BIOS `int`를 못 쓰므로 VGA 텍스트 버퍼(`0xB8000`)에 직접 쓴다.
 
-**01에서 이어짐**: 01의 real-mode `Hello world` 출력 코드(`print` 루프)를 그대로 출발점으로 두고, 출력 후 `hlt`로 멈추던 자리를 보호모드 전환으로 바꾼다. 인사말도 `Hello world -- real mode (16-bit)` → `Hello world -- protected mode (32-bit)`로 이어가 모드 전환이 한눈에 드러나게 한다. 01과 달라지는 점은 `sti` 생략(IDT 없이 PM 진입)뿐이고, 그 이유는 코드 주석에 남겨둠.
+**01에서 이어짐**: 01의 real-mode `Hello world` 출력 코드(`print` 루프)를 그대로 출발점으로 두고, 출력 후 `hlt`로 멈추던 자리를 보호모드 전환으로 바꾼다. 인사말도 `Hello world -- real mode (16-bit)` → `Hello world -- protected mode (32-bit)`로 이어가 모드 전환이 한눈에 드러나게 한다. 01과 달라지는 점은 `sti` 생략뿐이다 — IDT 없이 PM에 진입하므로 인터럽트가 들어오면 처리할 수 없어 `cli` 상태를 유지한다(코드에는 주석을 달지 않고 이유는 여기 문서에 둔다).
 
 상위 컨텍스트(환경·툴체인·실습 진행 방식)는 부모 디렉토리의 `CLAUDE.md` 참고.
 
