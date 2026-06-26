@@ -1,0 +1,40 @@
+ASM      := nasm
+QEMU     := qemu-system-i386
+
+BUILD    := build
+BOOT     := $(BUILD)/boot.bin
+KERNEL   := $(BUILD)/KERNEL.BIN
+IMG      := $(BUILD)/os.img
+IMG_SIZE := 16M
+
+.PHONY: all run run-nogui clean tools
+
+all: $(IMG)
+
+tools:
+	sudo apt update && sudo apt install -y mtools dosfstools
+
+$(BOOT): boot/boot.asm | $(BUILD)
+	$(ASM) -f bin $< -o $@
+
+$(KERNEL): boot/kernel.asm | $(BUILD)
+	$(ASM) -f bin $< -o $@
+
+$(IMG): $(BOOT) $(KERNEL)
+	truncate -s $(IMG_SIZE) $@
+	mkfs.fat -F 16 -s 1 -n CUSTOMOS $@
+	mcopy -i $@ -o $(KERNEL) ::KERNEL.BIN
+	dd if=$(BOOT) of=$@ bs=1 count=11 conv=notrunc
+	dd if=$(BOOT) of=$@ bs=1 skip=62 seek=62 count=450 conv=notrunc
+
+$(BUILD):
+	mkdir -p $(BUILD)
+
+run: $(IMG)
+	$(QEMU) -drive format=raw,file=$(IMG)
+
+run-nogui: $(IMG)
+	$(QEMU) -drive format=raw,file=$(IMG) -display none -serial mon:stdio
+
+clean:
+	rm -rf $(BUILD)

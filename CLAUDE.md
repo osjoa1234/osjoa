@@ -19,6 +19,7 @@
 | `nasm` | **apt 설치 필요** | 어셈블리 (부트섹터 등) |
 | `qemu-system-x86` | **apt 설치 필요** | 가상머신 (재부팅 없이 테스트) |
 | `xorriso`, `grub-pc-bin`, `grub-common`, `mtools` | **apt 설치 필요** | ISO 이미지 / GRUB |
+| `mtools`, `dosfstools` | **apt 설치 필요** | FAT 이미지 생성·복사 (`mkfs.fat`, `mcopy`) |
 | `gcc-multilib`, `g++-multilib` | **apt 설치 필요** | 32비트 크로스 빌드 |
 | `gdb` | **apt 설치 필요** | QEMU 원격 디버깅 (`-s -S`) |
 
@@ -26,7 +27,7 @@
 ```bash
 sudo apt update
 sudo apt install -y nasm qemu-system-x86 qemu-utils \
-    xorriso grub-pc-bin grub-common mtools gdb \
+    xorriso grub-pc-bin grub-common mtools dosfstools gdb \
     gcc-multilib g++-multilib
 ```
 
@@ -47,12 +48,13 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 02 | `02-protected-mode` | 32비트 보호모드 진입, GDT |
 | 03 | `03-a20` | A20 게이트 활성화 + 검증(1MB wraparound 테스트) |
 | 04 | `04-disk-load` | `int 0x13` 디스크 로드(재시도/에러체크) → 적재한 추가 섹터로 점프 |
-| 05 | `05-c-kernel` | 적재 영역을 C 커널로 교체 — `linker.ld` 레이아웃 + asm→C 점프 |
-| 06 | `06-grub-multiboot` | 같은 C 커널을 GRUB(Multiboot)로 부팅 (ISO) |
-| 07 | `07-vga-print` | VGA 텍스트 모드 / `printf` 구현 |
-| 08 | `08-interrupts` | PIC 리맵 + IDT + 인터럽트 핸들러 |
-| 09 | `09-keyboard` | 키보드 드라이버 |
-| 10 | `10-paging` | E820 메모리 맵 + 페이징, 가상 메모리 |
+| 05 | `05-fat-load` | 부트로더가 FAT16에서 `KERNEL.BIN`을 찾아 적재 (BPB/루트 디렉토리/클러스터 체인) |
+| 06 | `06-c-kernel` | payload를 C 커널로 교체 — `linker.ld` 레이아웃 + asm 진입 stub→C 점프 |
+| 07 | `07-grub-multiboot` | 같은 C 커널을 GRUB(Multiboot)로 부팅 (ISO) |
+| 08 | `08-vga-print` | VGA 텍스트 모드 / `printf` 구현 |
+| 09 | `09-interrupts` | PIC 리맵 + IDT + 인터럽트 핸들러 |
+| 10 | `10-keyboard` | 키보드 드라이버 |
+| 11 | `11-paging` | E820 메모리 맵 + 페이징, 가상 메모리 |
 
 순서·이름은 진행 중 자유롭게 조정 가능.
 

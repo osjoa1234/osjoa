@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(nasm *)",
+      "Bash(qemu-system-i386 *)",
+      "Bash(make clean)"
+    ]
+  }
+}
