@@ -46,7 +46,7 @@ start:
     xor bh, bh
     mul bx
     add ax, [bpb_rsvdseccnt]
-    mov [root_dir_lba], ax
+    mov [root_dir_sector], ax
 
     mov ax, [bpb_rootentcnt]
     mov bx, 32
@@ -58,19 +58,19 @@ start:
     div word [bpb_bytspersec]
     mov [root_dir_sectors], ax
 
-    add ax, [root_dir_lba]
-    mov [data_lba], ax
+    add ax, [root_dir_sector]
+    mov [data_sector], ax
 
-    mov ax, [root_dir_lba]
-    mov [scan_lba], ax
+    mov ax, [root_dir_sector]
+    mov [scan_sector], ax
     mov ax, [root_dir_sectors]
     mov [scan_cnt], ax
 
 .next_dirsec:
-    mov ax, [scan_lba]
+    mov ax, [scan_sector]
     mov cx, 1
     mov di, DIRBUF
-    call read_lba
+    call read_sectors
 
     mov di, DIRBUF
     mov dx, [bpb_bytspersec]
@@ -88,14 +88,12 @@ start:
     dec dx
     jnz .next_entry
 
-    inc word [scan_lba]
+    inc word [scan_sector]
     dec word [scan_cnt]
     jnz .next_dirsec
 
 not_found:
-    mov si, msg_disk_fail
-    call print
-    jmp $
+    jmp disk_fail
 
 found:
     mov ax, [di+26]
@@ -108,13 +106,13 @@ found:
     mov bl, [bpb_secperclus]
     xor bh, bh
     mul bx
-    add ax, [data_lba]
+    add ax, [data_sector]
 
     mov bl, [bpb_secperclus]
     xor bh, bh
     mov cx, bx
     mov di, [dest_off]
-    call read_lba
+    call read_sectors
 
     mov al, [bpb_secperclus]
     xor ah, ah
@@ -138,32 +136,59 @@ fat_next:
     push dx
     mov cx, 1
     mov di, FATBUF
-    call read_lba
+    call read_sectors
     pop bx
     mov ax, [FATBUF + bx]
     ret
 
-read_lba:
-    mov [dap_lba], ax
-    mov [dap_cnt], cx
-    mov [dap_off], di
+read_sectors:
+.next:
+    push ax
+    push cx
+    push di
+    call set_chs
     mov byte [retries], 3
 .retry:
-    mov ah, 0x42
+    mov ah, 0x02
+    mov al, 1
+    mov bx, di
     mov dl, [boot_drive]
-    mov si, dap
     int 0x13
-    jnc .ok
+    jnc .read_ok
     xor ah, ah
     mov dl, [boot_drive]
     int 0x13
     dec byte [retries]
     jnz .retry
+    jmp disk_fail
+.read_ok:
+    pop di
+    pop cx
+    pop ax
+    inc ax
+    mov bx, [bpb_bytspersec]
+    add di, bx
+    loop .next
+    ret
+
+set_chs:
+    xor dx, dx
+    div word [bpb_secpertrk]
+    inc dl
+    mov cl, dl
+    xor dx, dx
+    div word [bpb_numheads]
+    mov dh, dl
+    mov ch, al
+    and ah, 0x03
+    shl ah, 6
+    or cl, ah
+    ret
+
+disk_fail:
     mov si, msg_disk_fail
     call print
     jmp $
-.ok:
-    ret
 
 print:
 .loop:
@@ -177,21 +202,12 @@ print:
 .done:
     ret
 
-dap:
-    db 0x10
-    db 0
-dap_cnt:    dw 0
-dap_off:    dw 0
-dap_seg:    dw 0
-dap_lba:    dd 0
-            dd 0
-
 boot_drive       db 0
 retries          db 0
-root_dir_lba     dw 0
+root_dir_sector  dw 0
 root_dir_sectors dw 0
-data_lba         dw 0
-scan_lba         dw 0
+data_sector      dw 0
+scan_sector      dw 0
 scan_cnt         dw 0
 cur_cluster      dw 0
 dest_off         dw 0

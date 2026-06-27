@@ -34,21 +34,21 @@ make tools     # sudo apt install -y mtools dosfstools
 
 - **superfloppy FAT16 + VBR**: 파티션 테이블(MBR) 없이 디스크 전체가 하나의 FAT16 볼륨. 따라서 부트섹터 자체가 볼륨 부트 레코드(VBR)이고, 맨 앞에 **BPB**(BIOS Parameter Block)를 품는다. 오프셋 0은 `jmp short start` + `nop`(3바이트)로 BPB를 건너뛰어 코드(오프셋 `0x3E`)로 점프.
 
-- **BPB는 런타임에 디스크에서 읽는다**: boot.asm 안의 BPB 값들은 어셈블용 placeholder다. 실제 값은 `mkfs.fat`가 디스크에 써 넣은 것을 쓴다. 부트섹터가 `0x7C00`에 올라오므로 `[bpb_*]` 레이블(= `0x7C00`+오프셋)을 읽으면 디스크의 실제 BPB가 읽힌다. 그래서 `BytsPerSec`/`SecPerClus`/`RsvdSecCnt`/`NumFATs`/`RootEntCnt`/`FATSz16`를 코드에 박지 않고 모두 동적으로 계산 → mkfs가 고른 지오메트리에 자동 적응.
+- **BPB는 런타임에 디스크에서 읽는다**: boot.asm 안의 BPB 값들은 어셈블용 placeholder다. 실제 값은 `mkfs.fat`가 디스크에 써 넣은 것을 쓴다. 부트섹터가 `0x7C00`에 올라오므로 `[bpb_*]` 레이블(= `0x7C00`+오프셋)을 읽으면 디스크의 실제 BPB가 읽힌다. 그래서 `BytsPerSec`/`SecPerClus`/`RsvdSecCnt`/`NumFATs`/`RootEntCnt`/`FATSz16`뿐 아니라 `SecPerTrk`/`NumHeads`도 코드에 박지 않고 모두 동적으로 읽는다. 05에서는 이 BPB 값으로 FAT 구조를 해석하고, 실제 BIOS 읽기는 끝까지 CHS(`AH=02`)로 유지한다.
 
 - **BPB 보존 오버레이(Makefile의 dd)**: `mkfs.fat`가 자기 부트섹터(+유효한 BPB)를 써 놓은 이미지에, 내 부트 코드를 **BPB를 덮지 않고** 얹는다. `dd ... count=11`(오프셋 0~10: `jmp`+OEM)와 `dd ... skip=62 seek=62 count=450`(오프셋 `0x3E`~511: 코드+서명) 두 번으로 쓰고, 그 사이 `[0x0B..0x3E)`(BPB)는 mkfs 값을 그대로 둔다. 내 코드가 BPB를 동적으로 읽으므로 이 조합이 항상 일관된다.
 
-- **FAT 레이아웃 산수**:
-  - `root_dir_lba = RsvdSecCnt + NumFATs * FATSz16`
+- **FAT 레이아웃 산수(볼륨 안의 섹터 순번)**:
+  - `root_dir_sector = RsvdSecCnt + NumFATs * FATSz16`
   - `root_dir_sectors = ceil(RootEntCnt * 32 / BytsPerSec)`
-  - `data_lba = root_dir_lba + root_dir_sectors`
-  - `cluster N → lba = data_lba + (N - 2) * SecPerClus` (데이터 영역은 클러스터 2부터)
+  - `data_sector = root_dir_sector + root_dir_sectors`
+  - `cluster N → sector = data_sector + (N - 2) * SecPerClus` (데이터 영역은 클러스터 2부터)
 
 - **루트 디렉토리 스캔(8.3 이름)**: 루트 디렉토리를 한 섹터씩 읽어 32바이트 엔트리들을 훑는다. 파일명은 11바이트 8.3 형식(이름 8 + 확장자 3, 공백 패딩) → `KERNEL.BIN`은 `"KERNEL  BIN"`. 첫 바이트 `0x00`이면 디렉토리 끝(더 없음). 일치하면 오프셋 26의 시작 클러스터(`DIR_FstClusLO`)를 얻는다.
 
 - **FAT 체인(on-demand 조회)**: 전체 FAT를 메모리에 올리지 않고, 필요한 클러스터의 FAT 항목이 든 섹터만 그때그때 읽는다. `fat_next`: `cluster*2`를 `BytsPerSec`로 나눠 FAT 섹터/항목 오프셋을 구하고(`shl`+`rcl`로 32비트화 → `div`), 그 섹터를 읽어 16비트 다음 클러스터를 반환. `>= 0xFFF8`이면 체인 끝(EOC).
 
-- **`int 13h` 확장 읽기(AH=42, LBA)**: 임의 이미지 크기에서 CHS 지오메트리 계산이 모호해지는 걸 피하려고 LBA 확장 읽기를 쓴다. 디스크 주소 패킷(DAP: 크기/섹터수/버퍼 off:seg/64비트 LBA)을 채워 `ds:si`로 넘긴다. 04와 마찬가지로 실패 시 AH=00 리셋 후 `[retries]` 카운트로 재시도.
+- **`int 13h` CHS 읽기(AH=02)**: 04의 BIOS 디스크 I/O 흐름을 그대로 잇기 위해 확장 읽기(AH=42)는 쓰지 않는다. 루트 디렉토리/FAT/데이터 위치를 계산한 뒤, BIOS 호출 직전마다 BPB의 `SecPerTrk`/`NumHeads`를 써서 현재 읽을 섹터를 CHS 레지스터(`CH`/`CL`/`DH`)로 맞춘다. 구현은 한 번에 1섹터씩 읽어 04와 같은 호출 형태를 유지하고, 실패 시에도 04처럼 AH=00 리셋 후 `[retries]` 카운트로 재시도한다.
 
 - **payload가 모드 전환을 소유**: 부트섹터는 적재 후 real mode에서 `jmp 0x0000:0x7E00`로 넘긴다. `kernel.asm`은 16비트로 시작해 A20 활성/검증(03의 1MB wraparound 테스트) → GDT 로드 → `cr0.PE` → `jmp 0x08:protected_start`로 32비트 진입한 뒤 VGA에 출력한다. GDT도 payload 안에 있다.
 
