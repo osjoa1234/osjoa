@@ -49,12 +49,13 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 03 | `03-a20` | A20 게이트 활성화 + 검증(1MB wraparound 테스트) |
 | 04 | `04-disk-load` | `int 0x13` 디스크 로드(재시도/에러체크) → 적재한 추가 섹터로 점프 |
 | 05 | `05-fat-load` | 부트로더가 FAT16에서 `KERNEL.BIN`을 찾아 적재 (BPB/루트 디렉토리/클러스터 체인) |
-| 06 | `06-c-kernel` | payload를 C 커널로 교체 — `linker.ld` 레이아웃 + asm 진입 stub→C 점프 |
-| 07 | `07-grub-multiboot` | 같은 C 커널을 GRUB(Multiboot)로 부팅 (ISO) |
-| 08 | `08-vga-print` | VGA 텍스트 모드 / `printf` 구현 |
-| 09 | `09-interrupts` | PIC 리맵 + IDT + 인터럽트 핸들러 |
-| 10 | `10-keyboard` | 키보드 드라이버 |
-| 11 | `11-paging` | E820 메모리 맵 + 페이징, 가상 메모리 |
+| 06 | `06-bios-lba` | BIOS `int 0x13` 확장 `AH=42`로 CHS 없이 LBA 읽기 |
+| 07 | `07-c-kernel` | payload를 C 커널로 교체 — `linker.ld` 레이아웃 + asm 진입 stub→C 점프 |
+| 08 | `08-grub-multiboot` | 같은 C 커널을 GRUB(Multiboot)로 부팅 (ISO) |
+| 09 | `09-vga-print` | VGA 텍스트 모드 / `printf` 구현 |
+| 10 | `10-interrupts` | PIC 리맵 + IDT + 인터럽트 핸들러 |
+| 11 | `11-keyboard` | 키보드 드라이버 |
+| 12 | `12-paging` | E820 메모리 맵 + 페이징, 가상 메모리 |
 
 순서·이름은 진행 중 자유롭게 조정 가능.
 
