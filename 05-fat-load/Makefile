@@ -6,6 +6,7 @@ BOOT     := $(BUILD)/boot.bin
 KERNEL   := $(BUILD)/KERNEL.BIN
 IMG      := $(BUILD)/os.img
 IMG_SIZE := 16M
+IMG_GEOM := 16/63
 
 .PHONY: all run run-nogui clean tools
 
@@ -22,7 +23,7 @@ $(KERNEL): boot/kernel.asm | $(BUILD)
 
 $(IMG): $(BOOT) $(KERNEL)
 	truncate -s $(IMG_SIZE) $@
-	mkfs.fat -F 16 -s 1 -n CUSTOMOS $@
+	mkfs.fat -F 16 -s 1 -g $(IMG_GEOM) -n CUSTOMOS $@
 	mcopy -i $@ -o $(KERNEL) ::KERNEL.BIN
 	dd if=$(BOOT) of=$@ bs=1 count=11 conv=notrunc
 	dd if=$(BOOT) of=$@ bs=1 skip=62 seek=62 count=450 conv=notrunc
