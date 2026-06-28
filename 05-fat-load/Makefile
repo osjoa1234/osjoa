@@ -26,7 +26,7 @@ $(IMG): $(BOOT) $(KERNEL)
 	mkfs.fat -F 16 -s 1 -g $(IMG_GEOM) -n CUSTOMOS $@
 	mcopy -i $@ -o $(KERNEL) ::KERNEL.BIN
 	dd if=$(BOOT) of=$@ bs=1 count=11 conv=notrunc
-	dd if=$(BOOT) of=$@ bs=1 skip=62 seek=62 count=450 conv=notrunc
+	dd if=$(BOOT) of=$@ bs=1 skip=62 seek=62 conv=notrunc
 
 $(BUILD):
 	mkdir -p $(BUILD)
