@@ -12,7 +12,7 @@ IMG_SIZE := 16M
 all: $(IMG)
 
 tools:
-	sudo apt update && sudo apt install -y mtools dosfstools
+	$(MAKE) -C .. setup-fat
 
 $(BOOT): boot/boot.asm | $(BUILD)
 	$(ASM) -f bin $< -o $@
