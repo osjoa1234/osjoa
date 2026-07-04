@@ -1,10 +1,14 @@
 # 빌드 산출물
+build/
 *.o
 *.bin
 *.elf
 *.iso
 *.img
 *.map
+v7.1.tar.gz
 
 # Claude Code 로컬 설정
 .claude/settings.local.json
+
+.assets/*
