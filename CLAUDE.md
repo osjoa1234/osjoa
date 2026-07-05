@@ -59,20 +59,23 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 13 | `13-phys-mem` | E820 기반 물리 페이지 프레임 할당기 |
 | 14 | `14-kernel-heap` | `kmalloc`/`kfree`와 커널 가상 메모리 확장 |
 | 15 | `15-pit-timer` | PIT 타이머 IRQ0, tick 카운터, 간단한 sleep |
-| 16 | `16-user-mode` | GDT/TSS 정리, ring 3 진입, 첫 사용자 코드 실행 |
-| 17 | `17-syscall` | `int 0x80` 기반 시스템 콜 진입 |
-| 18 | `18-scheduler` | 라운드 로빈 태스크 전환과 커널 스택 |
-| 19 | `19-initramfs` | GRUB 모듈로 initramfs 적재, 메모리 파일 접근 |
-| 20 | `20-elf-loader` | ELF 사용자 프로그램 적재와 `init` 실행 |
-| 21 | `21-vfs` | 파일 디스크립터, 경로 해석, 단순 VFS 계층 |
-| 22 | `22-shell` | 사용자 모드 셸과 기본 명령 실행 |
-| 23 | `23-pci` | PCI 버스 탐색과 장치 열거 |
-| 24 | `24-net-driver` | NIC 드라이버와 Ethernet 프레임 송수신 |
-| 25 | `25-net-ipv4` | ARP, IPv4, ICMP ping |
-| 26 | `26-net-udp` | UDP 송수신과 간단한 소켓 API |
-| 27 | `27-net-tcp` | 최소 TCP 연결과 사용자 공간 네트워크 프로그램 |
+| 16 | `16-kernel-monitor` | 키보드 입력 기반 커널 모니터와 간단한 명령 파서 |
+| 17 | `17-kernel-threads` | 커널 태스크 구조체, 문맥 전환, 첫 커널 쓰레드 실행 |
+| 18 | `18-scheduler` | 라운드 로빈 스케줄러와 sleep/wakeup, 선점 기반 태스크 전환 |
+| 19 | `19-user-mode` | GDT/TSS 정리, ring 3 진입, 첫 사용자 코드 실행 |
+| 20 | `20-syscall` | `int 0x80` 기반 시스템 콜 진입 |
+| 21 | `21-initramfs` | GRUB 모듈로 initramfs 적재, 메모리 파일 접근 |
+| 22 | `22-elf-loader` | ELF 사용자 프로그램 적재와 첫 `init` 이미지 준비 |
+| 23 | `23-processes` | 주소 공간 + PID + `spawn/exit/wait`를 갖는 프로세스 실행 모델 |
+| 24 | `24-vfs` | 파일 디스크립터, 경로 해석, 단순 VFS 계층 |
+| 25 | `25-user-shell` | 사용자 모드 셸과 기본 명령 실행 |
+| 26 | `26-pci` | PCI 버스 탐색과 장치 열거 |
+| 27 | `27-net-driver` | NIC 드라이버와 Ethernet 프레임 송수신 |
+| 28 | `28-net-ipv4` | ARP, IPv4, ICMP ping |
+| 29 | `29-net-udp` | UDP 송수신과 간단한 소켓 API |
+| 30 | `30-net-tcp` | 최소 TCP 연결과 사용자 공간 네트워크 프로그램 |
 
-12 이후는 메모리 관리 → 시간 기반 실행 → 사용자 모드/프로세스 → 사용자 공간 → PCI/네트워크 순서로 기반을 쌓는다.
+12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → PCI/네트워크 순서로 기반을 쌓는다.
 
 순서·이름은 진행 중 자유롭게 조정 가능.
 
