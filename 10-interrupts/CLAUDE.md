@@ -76,6 +76,17 @@ xorriso -indev build/os.iso -find / -type f -print
 - `grub-file --is-x86-multiboot build/kernel.elf`가 성공 종료한다.
 - `make run-nogui`가 debugcon 로그를 출력한 뒤 종료한다.
 
+## 이전 단계 대비 변경 파일
+
+| 파일 | 상태 | 설명 |
+|------|------|------|
+| `Makefile` | 수정 | interrupts.asm, interrupts.c 빌드 대상 추가 |
+| `boot/console.c` | 수정 | QEMU debugcon 포트(0xE9) 미러링 추가 |
+| `boot/interrupts.asm` | 신규 | 256개 인터럽트 스텁 + 공통 진입점 |
+| `boot/interrupts.c` | 신규 | IDT 구성, PIC 리맵(0x20/0x28), 예외/IRQ 디스패치 |
+| `boot/interrupts.h` | 신규 | 인터럽트 헤더 |
+| `boot/kernel.c` | 수정 | interrupts_init() 호출, int3/IRQ0 데모 추가 |
+
 ## 다음 단계 힌트
 
 - `11-keyboard`: 지금 만든 IDT/PIC 경로에서 `IRQ1`만 열고 스캔 코드를 읽어 콘솔에 문자로 표시한다.

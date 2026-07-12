@@ -79,6 +79,13 @@ qemu-system-i386 -drive format=raw,file=build/os.img -display none -monitor stdi
 
 - `mkfs.fat -g ...` 없이 만든 이미지에서도 `KERNEL.BIN` 적재가 정상 동작한다.
 
+## 이전 단계 대비 변경 파일
+
+| 파일 | 상태 | 설명 |
+|------|------|------|
+| `boot/boot.asm` | 수정 | `read_sectors`를 CHS(AH=02)에서 LBA(AH=42) + DAP 방식으로 교체 |
+| `boot/kernel.asm` | 수정 | 출력 메시지에 `via BIOS LBA` 추가 |
+
 ## 다음 단계 힌트
 
 - `07-c-kernel`: payload(`KERNEL.BIN`)를 asm에서 C 커널로 교체한다. 이번 단계의 BIOS LBA 읽기 경로는 그대로 유지되고, 적재 대상만 freestanding 32비트 C 바이너리로 바뀐다.

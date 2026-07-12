@@ -57,6 +57,15 @@ make clean
 - `kfree b+a: used=8 bytes` — c만 남아 8바이트
 - `kmalloc after free: d=0x0040000C *d=42 reused` — a 주소 재사용
 
+## 이전 단계 대비 변경 파일
+
+| 파일 | 상태 | 설명 |
+|------|------|------|
+| `Makefile` | 수정 | kheap.c 빌드 대상 추가 |
+| `boot/kheap.c` | 신규 | free-list 힙 할당기 (block_hdr, kmalloc, kfree, splitting, coalescing) |
+| `boot/kheap.h` | 신규 | 힙 헤더 |
+| `boot/kernel.c` | 수정 | kheap_init() 호출, kmalloc/kfree/reuse 시연 |
+
 ## 다음 단계 힌트
 
 - `15-pit-timer`: PIT IRQ0으로 tick 카운터 구현, 간단한 `ksleep(ms)` 추가.

@@ -57,6 +57,16 @@ make clean
 - 그 이후 `keyboard demo: type to echo keystrokes`가 나오고 3초 후 정상 종료한다.
 - `grub-file --is-x86-multiboot build/kernel.elf`가 성공 종료한다.
 
+## 이전 단계 대비 변경 파일
+
+| 파일 | 상태 | 설명 |
+|------|------|------|
+| `Makefile` | 수정 | paging.c 빌드 대상 추가 |
+| `boot/interrupts.c` | 수정 | page fault(0x0E) 처리 시 CR2 출력 추가 |
+| `boot/kernel.c` | 수정 | E820 메모리 맵 출력, paging_init() 호출 |
+| `boot/paging.c` | 신규 | 페이지 디렉토리/테이블 설정, CR3/CR0 제어 |
+| `boot/paging.h` | 신규 | 페이징 헤더 |
+
 ## 다음 단계 힌트
 
 - `13-phys-mem`: E820 usable 영역을 비트맵으로 관리하고 `page_alloc()`/`page_free()`를 구현한다. PDE[1] 이상에 새 페이지를 매핑해 4MB 넘어를 사용할 수 있게 된다.

@@ -54,6 +54,16 @@ make clean
 - `sleep 500ms: ticks before=N` 출력 후 500ms 대기
 - `sleep done: ticks after=M (delta=50)` — 100Hz × 0.5s = 50 tick
 
+## 이전 단계 대비 변경 파일
+
+| 파일 | 상태 | 설명 |
+|------|------|------|
+| `Makefile` | 수정 | timer.c 빌드 대상 추가 |
+| `boot/interrupts.c` | 수정 | IRQ0 핸들러에서 timer_irq() 호출 추가 |
+| `boot/kernel.c` | 수정 | timer_init() 호출, timer_sleep(500) 시연 |
+| `boot/timer.c` | 신규 | PIT 채널 0 초기화, tick 카운터, timer_sleep() |
+| `boot/timer.h` | 신규 | 타이머 헤더 |
+
 ## 다음 단계 힌트
 
 - `16-kernel-monitor`: 키보드 입력 기반 커널 모니터와 간단한 명령 파서.

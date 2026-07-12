@@ -55,6 +55,17 @@ make clean
 - `make run-nogui`가 debugcon 로그를 출력하고 오류 없이 종료한다.
 - `grub-file --is-x86-multiboot build/kernel.elf`가 성공 종료한다.
 
+## 이전 단계 대비 변경 파일
+
+| 파일 | 상태 | 설명 |
+|------|------|------|
+| `Makefile` | 수정 | keyboard.c 빌드 대상 추가 |
+| `boot/interrupts.c` | 수정 | IRQ1→keyboard_irq() 디스패치, interrupts_unmask_irq() 추가 |
+| `boot/interrupts.h` | 수정 | interrupts_unmask_irq() 선언 추가 |
+| `boot/keyboard.c` | 신규 | PS/2 스캔코드 Set 1 테이블, shift 상태 추적, keyboard_irq() |
+| `boot/keyboard.h` | 신규 | 키보드 헤더 |
+| `boot/kernel.c` | 수정 | keyboard_init() 호출, 키 입력 대기 루프로 변경 |
+
 ## 다음 단계 힌트
 
 - `12-paging`: 페이지 폴트 벡터 `0x0E`를 지금의 예외 디스패치 경로에 연결해, fault 주소와 에러 코드를 찍으며 가상 메모리로 넘어간다.

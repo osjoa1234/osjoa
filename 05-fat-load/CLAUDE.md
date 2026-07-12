@@ -83,6 +83,14 @@ VGA 출력은 시리얼로 안 나오므로, GUI 없이 확인하려면 QEMU 모
   ```
 - 이미지 안에 `KERNEL.BIN`이 존재(`mdir -i build/os.img ::`).
 
+## 이전 단계 대비 변경 파일
+
+| 파일 | 상태 | 설명 |
+|------|------|------|
+| `Makefile` | 수정 | FAT16 이미지 생성, BPB 보존 오버레이(`dd`) 룰 추가 |
+| `boot/boot.asm` | 수정 | FAT16 VBR + BPB + 루트 디렉토리 스캔 + FAT 체인 적재로 전면 교체 |
+| `boot/kernel.asm` | 신규 | payload: 16비트 진입 → A20 → GDT/PM → 32비트 VGA 출력 |
+
 ## 다음 단계 힌트
 
 - `06-bios-lba`: FAT 파서는 그대로 두고, 실제 BIOS 읽기만 `int 13h` 확장 `AH=42`로 바꾼다. 05의 CHS 환산과 geometry 의존성을 걷어내고 절대 LBA 읽기로 단순화하는 단계다.

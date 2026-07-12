@@ -54,6 +54,18 @@ make clean
 - `map virt=0x400000 -> phys=0x... write=0xDEADBEEF read=0xDEADBEEF OK`
 - `after page_free x2: N free pages` — 2 증가 확인
 
+## 이전 단계 대비 변경 파일
+
+| 파일 | 상태 | 설명 |
+|------|------|------|
+| `Makefile` | 수정 | phys_mem.c 빌드 대상 추가 |
+| `boot/kernel.c` | 수정 | phys_mem_init() 호출, alloc/map/free 시연 |
+| `boot/paging.c` | 수정 | page_map_frame() 추가 |
+| `boot/paging.h` | 수정 | page_map_frame() 선언 추가 |
+| `boot/phys_mem.c` | 신규 | E820 기반 비트맵 물리 페이지 프레임 할당기 |
+| `boot/phys_mem.h` | 신규 | 물리 메모리 헤더 |
+| `linker.ld` | 수정 | kernel_start/kernel_end 심볼 추가 |
+
 ## 다음 단계 힌트
 
 - `14-kernel-heap`: `kmalloc(size)` / `kfree(ptr)` 구현. `page_alloc()`으로 얻은 프레임을 가상 주소에 매핑하고 그 위에 free-list 또는 bump allocator를 올린다.

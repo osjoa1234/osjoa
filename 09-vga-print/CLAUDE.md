@@ -78,6 +78,15 @@ qemu-system-i386 -cdrom build/os.iso -display none -monitor stdio -serial none
 - `grub-file --is-x86-multiboot build/kernel.elf`가 성공 종료한다.
 - `build/os.iso`가 생성되고, `xorriso -indev build/os.iso -find / -type f -print`에 `/boot/kernel.elf`, `/boot/grub/grub.cfg`가 보인다.
 
+## 이전 단계 대비 변경 파일
+
+| 파일 | 상태 | 설명 |
+|------|------|------|
+| `Makefile` | 수정 | console.c 빌드 대상 추가 |
+| `boot/console.c` | 신규 | VGA 텍스트 콘솔 — 커서, 자동 줄바꿈/스크롤, printf |
+| `boot/console.h` | 신규 | 콘솔 헤더 |
+| `boot/kernel.c` | 수정 | console_init() 호출, 출력을 콘솔 함수로 전환 |
+
 ## 다음 단계 힌트
 
 - `10-interrupts`: PIC 리맵과 IDT를 올린 뒤, 예외/IRQ 진입을 이 콘솔에 출력해 디버깅한다.

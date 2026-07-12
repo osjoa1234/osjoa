@@ -80,6 +80,17 @@ qemu-system-i386 -drive format=raw,file=build/os.img -display none -monitor stdi
 
 - `build/KERNEL.BIN`이 ELF가 아니라 flat binary이며, `file build/kernel.elf build/KERNEL.BIN`으로 각각 ELF/데이터 파일로 구분된다.
 
+## 이전 단계 대비 변경 파일
+
+| 파일 | 상태 | 설명 |
+|------|------|------|
+| `Makefile` | 수정 | entry.asm + kernel.c 빌드, linker.ld 링크, ELF→flat binary(`objcopy`) 변환 추가 |
+| `boot/boot.asm` | 수정 | 출력 메시지 변경 |
+| `boot/kernel.asm` | 삭제 | payload를 entry.asm + kernel.c 조합으로 분리 |
+| `boot/entry.asm` | 신규 | 16비트 진입, A20 활성화, GDT/PM 전환, `kernel_main` 호출 |
+| `boot/kernel.c` | 신규 | 32비트 freestanding C 커널 — VGA 텍스트 출력 |
+| `linker.ld` | 신규 | 0x7E00 기준 flat binary 레이아웃 |
+
 ## 다음 단계 힌트
 
 - `08-grub-multiboot`: FAT16 파일 검색과 자체 보호모드 진입을 GRUB로 대체해 커널 적재를 단순화한다.

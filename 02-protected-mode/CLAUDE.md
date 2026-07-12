@@ -41,6 +41,12 @@ make clean
   stat -c%s build/boot.bin   # 512
   ```
 
+## 이전 단계 대비 변경 파일
+
+| 파일 | 상태 | 설명 |
+|------|------|------|
+| `boot/boot.asm` | 수정 | GDT 정의, `cr0` PE 비트 설정, far jump 추가; 보호모드 이후 VGA 직접 출력 |
+
 ## 다음 단계 힌트
 
 - `03-a20`: A20 게이트를 활성화하고 1MB 위 주소가 wraparound 없이 접근되는지 검증.

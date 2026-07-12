@@ -38,6 +38,10 @@ make clean
   stat -c%s build/boot.bin   # 512가 나와야 함
   ```
 
+## 이전 단계 대비 변경 파일
+
+첫 번째 단계 — 비교 대상 없음.
+
 ## 다음 단계 힌트
 
 - `02-protected-mode`로 넘어갈 때는 이 디렉토리를 복사한 뒤 GDT 정의 + `cr0` PE 비트 셋팅을 추가.

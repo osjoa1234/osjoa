@@ -81,6 +81,17 @@ qemu-system-i386 -cdrom build/os.iso -display none -monitor stdio -serial none
 - `grub-file --is-x86-multiboot build/kernel.elf`가 성공 종료한다.
 - `build/os.iso`가 생성되고, `xorriso -indev build/os.iso -find / -type f -print`에 `/boot/kernel.elf`, `/boot/grub/grub.cfg`가 보인다.
 
+## 이전 단계 대비 변경 파일
+
+| 파일 | 상태 | 설명 |
+|------|------|------|
+| `Makefile` | 수정 | GRUB ISO 생성 빌드로 전환; FAT 이미지 관련 룰 제거 |
+| `boot/boot.asm` | 삭제 | FAT16 부트로더 제거 (GRUB가 대체) |
+| `boot/entry.asm` | 수정 | Multiboot 헤더 추가, real mode 진입 코드 제거, 스택 준비 후 C 호출만 남김 |
+| `boot/kernel.c` | 수정 | Multiboot magic/info 포인터 출력 추가; 메시지 변경 |
+| `grub/grub.cfg` | 신규 | GRUB 메뉴 설정 |
+| `linker.ld` | 수정 | Multiboot ELF 표준 적재 주소로 재배치 |
+
 ## 다음 단계 힌트
 
 - `09-vga-print`: 지금의 단순 문자열 출력 루틴을 커서, 개행, 색상, 숫자 포맷팅이 있는 콘솔 계층으로 확장한다.
