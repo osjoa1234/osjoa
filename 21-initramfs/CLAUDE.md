@@ -11,30 +11,29 @@
 ```text
 21-initramfs/
 ├── boot/
-│   ├── console.c/h        # 20과 동일
-│   ├── entry.asm          # 20과 동일
-│   ├── interrupts.asm     # 20과 동일
-│   ├── interrupts.c/h     # 20과 동일
-│   ├── keyboard.c/h       # 20과 동일
-│   ├── kheap.c/h          # 20과 동일
-│   ├── monitor.c/h        # 20과 동일
-│   ├── paging.c/h         # 20과 동일
-│   ├── phys_mem.c/h       # 20과 동일
-│   ├── timer.c/h          # 20과 동일
-│   ├── context_switch.asm # 20과 동일
-│   ├── gdt.h/c/asm        # 20과 동일
-│   ├── thread.c/h         # 20과 동일
-│   ├── initrd.h           # 신규: initrd_init/open/read 선언
+│   ├── console.c/h
+│   ├── entry.asm
+│   ├── interrupts.asm
+│   ├── interrupts.c/h
+│   ├── keyboard.c/h
+│   ├── kheap.c/h
+│   ├── monitor.c/h
+│   ├── paging.c/h
+│   ├── phys_mem.c/h
+│   ├── timer.c/h
+│   ├── context_switch.asm
+│   ├── gdt.h/c/asm
+│   ├── thread.c/h
+│   ├── initrd.h           # 신규: initrd_init/open/read/file_count 선언
 │   ├── initrd.c           # 신규: CPIO newc 파서, 파일 테이블, fd 기반 읽기
 │   ├── syscall.h          # 수정: SYS_OPEN(2), SYS_READ(3) 추가
-│   ├── syscall.c          # 수정: sys_open, sys_read 추가
+│   ├── syscall.c          # 수정: sys_open, sys_read 추가; initrd.h include
 │   └── kernel.c           # 수정: multiboot_mod 파싱, initrd_init 호출, user_task 변경
 ├── initrd/
 │   └── hello.txt          # 신규: initramfs에 담기는 샘플 파일
-├── mkcpio.py              # 신규: CPIO newc 아카이브 생성 스크립트
 ├── grub/grub.cfg          # 수정: module /boot/initramfs.cpio 추가
-├── linker.ld              # 20과 동일
-├── Makefile               # 수정: initrd.o, CPIO 빌드, ISO에 모듈 포함
+├── linker.ld
+├── Makefile               # 수정: initrd.o 추가; cpio 빌드 타깃; ISO에 initramfs.cpio 포함
 └── build/
 ```
 
@@ -68,21 +67,35 @@ Linux initramfs의 표준 포맷. 각 파일 항목 구조:
 ```
 
 헤더 내 주요 필드 (모두 8자리 16진수 ASCII):
+- 오프셋 0: 매직 `07070` (5바이트)
 - 오프셋 54: `filesize` (파일 크기)
 - 오프셋 94: `namesize` (파일명 길이, null 포함)
 - 마지막 항목 파일명: `TRAILER!!!`
 
-데이터 시작 오프셋 = `align4(110 + namesize)`, 다음 항목 오프셋 = 데이터 시작 + `align4(filesize)`
+데이터 시작 오프셋 = `(110 + namesize + 3) & ~3`, 다음 항목 오프셋 = 데이터 시작 + `(filesize + 3) & ~3`
 
 ### initrd.c — CPIO 파서
 
-`initrd_init(start, end)`에서 CPIO 아카이브를 순회하며 파일 정보(이름 포인터, 데이터 포인터, 크기)를 최대 16개까지 정적 테이블에 등록한다. 이름 앞의 `./`는 `initrd_open` 시 제거해 비교한다.
+`initrd_init(start, end)`에서 CPIO 아카이브를 순회하며 파일 정보(이름 포인터, 데이터 포인터, 크기)를 최대 16개(`INITRD_MAX_FILES`)까지 정적 테이블에 등록한다.
 
-`initrd_read`는 파일마다 읽기 위치(`pos`)를 추적하므로 `SYS_READ`를 여러 번 호출하면 이어서 읽힌다.
+- `filesize == 0`인 항목(디렉토리 등)은 테이블에 넣지 않는다.
+- 이름 포인터는 아카이브 메모리를 직접 가리킨다(복사 없음).
+- `initrd_open` 시 이름 앞의 `./`를 제거해 비교한다.
+- `initrd_read`는 파일마다 읽기 위치(`pos`)를 추적하므로 `SYS_READ`를 여러 번 호출하면 이어서 읽힌다.
 
-### mkcpio.py
+### CPIO 아카이브 생성
 
-호스트에 `cpio`가 없는 환경에서도 CPIO newc 아카이브를 생성하기 위해 Python 스크립트로 직접 구현했다. `initrd/` 디렉토리의 파일을 알파벳 순으로 넣고 `TRAILER!!!` 항목으로 닫는다.
+Makefile에서 시스템 `cpio`를 사용한다:
+
+```makefile
+cd $(INITRDDIR) && find . | sort | cpio -o --format=newc > ../$(INITRAMFS)
+```
+
+`find . | sort`로 파일 순서를 결정론적으로 만들고 `cpio -o --format=newc`로 newc 포맷 아카이브를 생성한다.
+
+### user_buf
+
+`user_buf`는 `kernel.c`에서 `static u8 user_buf[256]`으로 선언되어 있다. user_task가 ring 3로 진입한 뒤에도 커널 데이터 영역의 이 버퍼를 `SYS_READ`의 목적지로 사용한다(페이지 테이블이 identity mapping 상태라 접근 가능).
 
 ### 새 syscall
 
@@ -91,7 +104,7 @@ Linux initramfs의 표준 포맷. 각 파일 항목 구조:
 | 2 | `SYS_OPEN` | ebx=파일명 포인터 | fd (≥0) 또는 -1 |
 | 3 | `SYS_READ` | ebx=fd, ecx=버퍼, edx=길이 | 읽은 바이트 수 |
 
-user_task는 `SYS_OPEN("hello.txt")` → `SYS_READ(fd, buf, len)` → `SYS_WRITE(buf)` → `SYS_EXIT(0)` 순으로 호출한다.
+user_task 흐름: `SYS_OPEN("hello.txt")` → `SYS_READ(fd, buf, len)` → `SYS_WRITE(buf)` → `SYS_EXIT(0)`
 
 ## 명령
 
@@ -118,7 +131,7 @@ user task exited: code=0
 
 | 파일 | 상태 | 설명 |
 |------|------|------|
-| `Makefile` | 수정 | initrd.o 추가; CPIO 빌드 타깃; ISO에 initramfs.cpio 포함 |
+| `Makefile` | 수정 | `initrd.o` 추가; `cpio` 빌드 타깃; ISO에 `initramfs.cpio` 포함 |
 | `grub/grub.cfg` | 수정 | `module /boot/initramfs.cpio` 추가 |
 | `boot/initrd.h` | 신규 | `initrd_init`, `initrd_open`, `initrd_read`, `initrd_file_count` 선언 |
 | `boot/initrd.c` | 신규 | CPIO newc 파서; 정적 파일 테이블; fd별 읽기 위치 추적 |
@@ -126,7 +139,6 @@ user task exited: code=0
 | `boot/syscall.c` | 수정 | `sys_open`, `sys_read` 구현; `initrd.h` include |
 | `boot/kernel.c` | 수정 | `struct multiboot_mod` 추가; 모듈 파싱 및 `initrd_init` 호출; `user_task`에서 SYS_OPEN/SYS_READ 사용; `user_buf` 추가 |
 | `initrd/hello.txt` | 신규 | initramfs에 담기는 샘플 텍스트 파일 |
-| `mkcpio.py` | 신규 | Python 기반 CPIO newc 아카이브 생성기 |
 
 ## 다음 단계 힌트
 
