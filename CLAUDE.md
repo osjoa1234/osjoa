@@ -67,7 +67,12 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 20 | `20-syscall` | `int 0x80` 기반 시스템 콜 진입 |
 | 21 | `21-initramfs` | GRUB 모듈로 initramfs 적재, 메모리 파일 접근 |
 | 22 | `22-elf-loader` | ELF 사용자 프로그램 적재와 첫 `init` 이미지 준비 |
-| 23 | `23-processes` | 주소 공간 + PID + `spawn/exit/wait`를 갖는 프로세스 실행 모델 |
+| 23-1 | `23-1-expand-paging` | e820 전체 RAM identity map, 4MB → 동적 다중 page_table |
+| 23-2 | `23-2-proc-addr-space` | per-process 페이지 디렉토리 클론, ELF 격리 적재 |
+| 23-3 | `23-3-proc-spawn-exit` | `process_t`, proc_table, `proc_spawn`, `proc_exit` |
+| 23-4 | `23-4-proc-wait` | `proc_wait`, 부모-자식 wait 흐름 |
+| 23-5 | `23-5-proc-exec` | `SYS_EXEC` — 현재 프로세스 이미지를 새 ELF로 교체 |
+| 23-6 | `23-6-proc-fork` | `SYS_FORK` — eager copy로 자식 생성, fork+exec 패턴 완성 |
 | 24 | `24-vfs` | 파일 디스크립터, 경로 해석, 단순 VFS 계층 |
 | 25 | `25-user-shell` | 사용자 모드 셸과 기본 명령 실행 |
 | 26 | `26-pci` | PCI 버스 탐색과 장치 열거 |
