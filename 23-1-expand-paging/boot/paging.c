@@ -1,5 +1,6 @@
 #include "paging.h"
 #include "phys_mem.h"
+#include "kheap.h"
 
 #define MAX_PT 32U
 
@@ -23,7 +24,7 @@ static void flush_tlb(void)
     __asm__ volatile ("mov %0, %%cr3" : : "r"(cr3));
 }
 
-u32 paging_init(u32 mmap_addr, u32 mmap_length)
+u32 paging_init(u32 mmap_vaddr, u32 mmap_length)
 {
     u32 max_addr = 0U;
     u32 offset   = 0U;
@@ -32,7 +33,7 @@ u32 paging_init(u32 mmap_addr, u32 mmap_length)
 
     while (offset < mmap_length) {
         const struct e820_entry *e =
-            (const struct e820_entry *)(mmap_addr + offset);
+            (const struct e820_entry *)(mmap_vaddr + offset);
         if (e->type == 1U && e->addr_high == 0U) {
             u32 end = e->addr_low + e->len_low;
             if (end > max_addr) max_addr = end;
@@ -46,23 +47,21 @@ u32 paging_init(u32 mmap_addr, u32 mmap_length)
     for (i = 0U; i < 1024U; i++) page_directory[i] = 0U;
 
     for (i = 0U; i < pt_count; i++) {
+        u32 pde_idx = 768U + i;
+        if (pde_idx >= (KHEAP_START >> 22U) && pde_idx <= ((KHEAP_MAX - 1U) >> 22U)) continue;
         for (j = 0U; j < 1024U; j++) {
             page_tables[i][j] = ((i * 1024U + j) * 0x1000U) | 0x07U;
         }
-        page_directory[i] = (u32)page_tables[i] | 0x07U;
+        page_directory[pde_idx] = ((u32)page_tables[i] - KERNEL_OFFSET) | 0x07U;
     }
 
     mapped_mb = pt_count * 4U;
 
-    __asm__ volatile ("mov %0, %%cr3" : : "r"((u32)page_directory));
     {
-        u32 cr0;
-        __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
-        cr0 |= 0x80000000U;
-        __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
+        u32 cr3_phys = (u32)page_directory - KERNEL_OFFSET;
+        __asm__ volatile ("mov %0, %%cr3" : : "r"(cr3_phys));
+        return cr3_phys;
     }
-
-    return (u32)page_directory;
 }
 
 u32 paging_mapped_mb(void)
@@ -78,14 +77,15 @@ void page_map_frame(u32 vaddr, u32 paddr)
     u32 i;
 
     if (!(page_directory[pde_idx] & 0x01U)) {
-        u32 new_pt = page_alloc();
-        pt = (u32 *)new_pt;
+        u32 pt_phys = page_alloc();
+        pt = (u32 *)(pt_phys + KERNEL_OFFSET);
         for (i = 0U; i < 1024U; i++) pt[i] = 0U;
-        page_directory[pde_idx] = new_pt | 0x03U;
+        page_directory[pde_idx] = pt_phys | 0x07U;
     } else {
-        pt = (u32 *)(page_directory[pde_idx] & ~0xFFFU);
+        u32 pt_phys = page_directory[pde_idx] & ~0xFFFU;
+        pt = (u32 *)(pt_phys + KERNEL_OFFSET);
     }
 
-    pt[pte_idx] = paddr | 0x03U;
+    pt[pte_idx] = paddr | 0x07U;
     flush_tlb();
 }

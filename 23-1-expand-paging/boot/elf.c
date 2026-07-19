@@ -1,4 +1,6 @@
 #include "elf.h"
+#include "paging.h"
+#include "phys_mem.h"
 
 u32 elf_load(const u8 *data, u32 size)
 {
@@ -19,8 +21,15 @@ u32 elf_load(const u8 *data, u32 size)
             data + ehdr->e_phoff + (u32)i * (u32)ehdr->e_phentsize);
         u8 *dst;
         u32 j;
+        u32 vpage;
 
         if (phdr->p_type != 1U) continue;
+
+        vpage = phdr->p_vaddr & ~0xFFFU;
+        while (vpage < phdr->p_vaddr + phdr->p_memsz) {
+            page_map_frame(vpage, page_alloc());
+            vpage += 0x1000U;
+        }
 
         dst = (u8 *)phdr->p_vaddr;
 

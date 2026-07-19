@@ -2,7 +2,6 @@
 #include "paging.h"
 #include "phys_mem.h"
 
-#define KHEAP_MAX  0x800000U
 #define PAGE_SIZE  0x1000U
 
 struct block_hdr {
