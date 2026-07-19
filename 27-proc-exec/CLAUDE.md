@@ -1,8 +1,8 @@
-# 23-5 — proc-exec
+# 27 — proc-exec
 
 **목표**: `SYS_EXEC`를 구현해 현재 프로세스의 주소 공간을 새 ELF 이미지로 교체한다.
 
-**23-4에서 이어짐**: 23-4에서 init이 `proc_spawn`으로 자식을 만들고 `proc_wait`로 기다렸다. 여기서는 `proc_exec`을 추가해 프로세스가 자신의 이미지를 다른 ELF로 완전히 교체하는 흐름을 구현한다.
+**26에서 이어짐**: 26에서 init이 `proc_spawn`으로 자식을 만들고 `proc_wait`로 기다렸다. 여기서는 `proc_exec`을 추가해 프로세스가 자신의 이미지를 다른 ELF로 완전히 교체하는 흐름을 구현한다.
 
 상위 컨텍스트는 부모 디렉토리의 `CLAUDE.md` 참고.
 
@@ -69,4 +69,4 @@ make clean
 
 ## 다음 단계 힌트
 
-- `23-6-proc-fork`: `SYS_FORK` — 부모 주소 공간을 eager copy해 자식을 생성, fork+exec 패턴 완성
+- `28-proc-fork`: `SYS_FORK` — 부모 주소 공간을 eager copy해 자식을 생성, fork+exec 패턴 완성

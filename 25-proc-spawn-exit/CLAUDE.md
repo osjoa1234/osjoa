@@ -1,8 +1,8 @@
-# 23-3 — proc-spawn-exit
+# 25 — proc-spawn-exit
 
 **목표**: 프로세스 테이블(`process_t`)을 도입하고, `proc_spawn`/`proc_exit`로 프로세스가 태어나고 죽는 흐름을 구현한다.
 
-**23-2에서 이어짐**: 23-2에서 kernel.c가 직접 `paging_clone_dir → elf_load_process → paging_set_dir → enter_user_mode`를 순서대로 호출했다. 여기서는 그 과정을 `proc_spawn(name)`으로 캡슐화하고, 프로세스 슬롯(pid, state, exit_code)을 관리하는 proc_table을 추가한다.
+**24에서 이어짐**: 24에서 kernel.c가 직접 `paging_clone_dir → elf_load_process → paging_set_dir → enter_user_mode`를 순서대로 호출했다. 여기서는 그 과정을 `proc_spawn(name)`으로 캡슐화하고, 프로세스 슬롯(pid, state, exit_code)을 관리하는 proc_table을 추가한다.
 
 상위 컨텍스트는 부모 디렉토리의 `CLAUDE.md` 참고.
 
@@ -124,4 +124,4 @@ processes: init exited code=0
 
 ## 다음 단계 힌트
 
-- `23-4-proc-wait`: `proc_wait`, `SYS_WAIT`, 자식 프로세스(`hello`) — 부모가 자식 종료를 기다리는 흐름
+- `26-proc-wait`: `proc_wait`, `SYS_WAIT`, 자식 프로세스(`hello`) — 부모가 자식 종료를 기다리는 흐름

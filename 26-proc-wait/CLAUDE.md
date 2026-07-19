@@ -1,8 +1,8 @@
-# 23-4 — proc-wait
+# 26 — proc-wait
 
 **목표**: `proc_wait`을 구현해 부모 프로세스(init)가 자식(hello)의 종료를 기다리는 흐름을 완성한다.
 
-**23-3에서 이어짐**: 23-3에서 kernel.c가 proc_spawn 후 hlt 루프 + proc_get으로 종료를 확인했다. 여기서는 `proc_wait(pid, *exit_code)`를 추가해 부모도 자식을 기다릴 수 있게 한다. init이 hello를 spawn하고 wait하는 표준 UNIX 흐름을 완성한다.
+**25에서 이어짐**: 25에서 kernel.c가 proc_spawn 후 hlt 루프 + proc_get으로 종료를 확인했다. 여기서는 `proc_wait(pid, *exit_code)`를 추가해 부모도 자식을 기다릴 수 있게 한다. init이 hello를 spawn하고 wait하는 표준 UNIX 흐름을 완성한다.
 
 상위 컨텍스트는 부모 디렉토리의 `CLAUDE.md` 참고.
 
@@ -28,7 +28,7 @@ u32 proc_wait(u32 pid, u32 *exit_code)
 
 `thread_sleep(10ms)` 루프로 ZOMBIE가 될 때까지 폴링한다. 대기 중에는 CPU를 다른 스레드에 양보한다.
 
-### 23-3 wake_sleeping 수정이 여기서 필요한 이유
+### 25 wake_sleeping 수정이 여기서 필요한 이유
 
 kernel_main(idle_task)가 `proc_wait → thread_sleep(10ms)` 루프를 돈다. 23-3에서 `wake_sleeping`을 do-while로 수정해 idle_task 자신도 wake 대상에 포함시켰기 때문에, kernel_main이 잠든 뒤 타이머 인터럽트로 깨어날 수 있다.
 
@@ -85,4 +85,4 @@ processes: init exited code=0
 
 ## 다음 단계 힌트
 
-- `24-vfs`: 파일 디스크립터, 경로 해석, 단순 VFS 계층
+- `29-vfs`: 파일 디스크립터, 경로 해석, 단순 VFS 계층

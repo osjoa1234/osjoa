@@ -1,4 +1,4 @@
-# 23-1 — expand-paging
+# 23 — expand-paging
 
 **목표**: e820 전체 RAM을 direct map으로 커버하는 higher-half 커널로 전환한다. 커널 가상 주소를 0xC0000000+ 로 올리고, 물리 주소 X는 항상 X + 0xC0000000 으로 접근한다.
 
@@ -98,4 +98,4 @@ Hello from ELF init!
 
 ## 다음 단계 힌트
 
-- `23-2-proc-addr-space`: per-process 페이지 디렉토리 클론, ELF 격리 적재 — 이제 커널/유저 가상 주소 공간이 분리되어 있으므로 프로세스별 PDE[0..767] 독립 관리가 자연스럽게 이어진다.
+- `24-proc-addr-space`: per-process 페이지 디렉토리 클론, ELF 격리 적재 — 이제 커널/유저 가상 주소 공간이 분리되어 있으므로 프로세스별 PDE[0..767] 독립 관리가 자연스럽게 이어진다.

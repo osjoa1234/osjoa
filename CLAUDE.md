@@ -67,19 +67,19 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 20 | `20-syscall` | `int 0x80` 기반 시스템 콜 진입 |
 | 21 | `21-initramfs` | GRUB 모듈로 initramfs 적재, 메모리 파일 접근 |
 | 22 | `22-elf-loader` | ELF 사용자 프로그램 적재와 첫 `init` 이미지 준비 |
-| 23-1 | `23-1-expand-paging` | e820 전체 RAM identity map, 4MB → 동적 다중 page_table |
-| 23-2 | `23-2-proc-addr-space` | per-process 페이지 디렉토리 클론, ELF 격리 적재 |
-| 23-3 | `23-3-proc-spawn-exit` | `process_t`, proc_table, `proc_spawn`, `proc_exit` |
-| 23-4 | `23-4-proc-wait` | `proc_wait`, 부모-자식 wait 흐름 |
-| 23-5 | `23-5-proc-exec` | `SYS_EXEC` — 현재 프로세스 이미지를 새 ELF로 교체 |
-| 23-6 | `23-6-proc-fork` | `SYS_FORK` — eager copy로 자식 생성, fork+exec 패턴 완성 |
-| 24 | `24-vfs` | 파일 디스크립터, 경로 해석, 단순 VFS 계층 |
-| 25 | `25-user-shell` | 사용자 모드 셸과 기본 명령 실행 |
-| 26 | `26-pci` | PCI 버스 탐색과 장치 열거 |
-| 27 | `27-net-driver` | NIC 드라이버와 Ethernet 프레임 송수신 |
-| 28 | `28-net-ipv4` | ARP, IPv4, ICMP ping |
-| 29 | `29-net-udp` | UDP 송수신과 간단한 소켓 API |
-| 30 | `30-net-tcp` | 최소 TCP 연결과 사용자 공간 네트워크 프로그램 |
+| 23 | `23-expand-paging` | e820 전체 RAM identity map, 4MB → 동적 다중 page_table |
+| 24 | `24-proc-addr-space` | per-process 페이지 디렉토리 클론, ELF 격리 적재 |
+| 25 | `25-proc-spawn-exit` | `process_t`, proc_table, `proc_spawn`, `proc_exit` |
+| 26 | `26-proc-wait` | `proc_wait`, 부모-자식 wait 흐름 |
+| 27 | `27-proc-exec` | `SYS_EXEC` — 현재 프로세스 이미지를 새 ELF로 교체 |
+| 28 | `28-proc-fork` | `SYS_FORK` — eager copy로 자식 생성, fork+exec 패턴 완성 |
+| 29 | `29-vfs` | 파일 디스크립터, 경로 해석, 단순 VFS 계층 |
+| 30 | `30-user-shell` | 사용자 모드 셸과 기본 명령 실행 |
+| 31 | `31-pci` | PCI 버스 탐색과 장치 열거 |
+| 32 | `32-net-driver` | NIC 드라이버와 Ethernet 프레임 송수신 |
+| 33 | `33-net-ipv4` | ARP, IPv4, ICMP ping |
+| 34 | `34-net-udp` | UDP 송수신과 간단한 소켓 API |
+| 35 | `35-net-tcp` | 최소 TCP 연결과 사용자 공간 네트워크 프로그램 |
 
 12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → PCI/네트워크 순서로 기반을 쌓는다.
 

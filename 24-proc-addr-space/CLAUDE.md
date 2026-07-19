@@ -1,8 +1,8 @@
-# 23-2 — proc-addr-space
+# 24 — proc-addr-space
 
 **목표**: 프로세스별 페이지 디렉토리를 클론하고, ELF를 전용 물리 프레임에 적재하여 격리된 주소 공간에서 사용자 코드를 실행한다.
 
-**23-1에서 이어짐**: 23-1에서 전체 물리 RAM을 identity map했다. 따라서 `page_alloc()`이 돌려준 어느 프레임이든 물리 주소 == 가상 주소로 직접 접근할 수 있다. 여기서는 그 특성을 활용해, 각 프로세스가 PDE[0]만 자기 전용 page_table을 갖고 나머지 커널 PDEs는 공유하는 per-process 페이지 디렉토리를 구현한다.
+**23에서 이어짐**: 23에서 전체 물리 RAM을 identity map했다. 따라서 `page_alloc()`이 돌려준 어느 프레임이든 물리 주소 == 가상 주소로 직접 접근할 수 있다. 여기서는 그 특성을 활용해, 각 프로세스가 PDE[0]만 자기 전용 page_table을 갖고 나머지 커널 PDEs는 공유하는 per-process 페이지 디렉토리를 구현한다.
 
 상위 컨텍스트는 부모 디렉토리의 `CLAUDE.md` 참고.
 
@@ -84,4 +84,4 @@ user task exited: code=0
 
 ## 다음 단계 힌트
 
-- `23-3-proc-spawn-exit`: `process_t`, proc_table, `proc_spawn`, `proc_exit`, `SYS_SPAWN` — 프로세스 테이블과 생애 관리
+- `25-proc-spawn-exit`: `process_t`, proc_table, `proc_spawn`, `proc_exit`, `SYS_SPAWN` — 프로세스 테이블과 생애 관리
