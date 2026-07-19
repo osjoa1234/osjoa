@@ -68,6 +68,7 @@ phys mem: 32561 free pages (127MB usable)
 | `boot/paging.h` | 수정 | `paging_init(u32, u32)` 서명 변경; `paging_mapped_mb()` 추가 |
 | `boot/paging.c` | 수정 | 정적 `page_tables[MAX_PT][1024]` 풀; e820 파싱으로 필요한 수만큼 identity map |
 | `boot/kernel.c` | 수정 | `paging_init(mmap_addr, mmap_length)` 호출; 출력 메시지에 MB 표시 |
+| `boot/kheap.c` | 수정 | `kmalloc`의 `heap_grow()` 단일 호출을 루프로 교체; PAGE_SIZE 초과 단일 할당 가능 |
 
 ## 다음 단계 힌트
 
