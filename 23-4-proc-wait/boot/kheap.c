@@ -75,7 +75,11 @@ void *kmalloc(u32 size)
 
     blk = find_free(size);
     if (!blk) {
-        heap_grow();
+        u32 prev_top;
+        do {
+            prev_top = heap_top;
+            heap_grow();
+        } while (!find_free(size) && heap_top != prev_top);
         blk = find_free(size);
         if (!blk) return 0;
     }
