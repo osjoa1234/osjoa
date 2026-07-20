@@ -31,6 +31,8 @@ typedef struct {
     u32 p_align;
 } Elf32_Phdr;
 
+#define PROC_USTACK_TOP 0x00400000U
+
 u32 elf_load(const u8 *data, u32 size);
 u32 elf_load_process(const u8 *data, u32 size, u32 pd_phys);
 

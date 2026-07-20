@@ -2,8 +2,6 @@
 #include "paging.h"
 #include "phys_mem.h"
 
-#define PROC_USTACK_TOP 0x00400000U
-
 u32 elf_load(const u8 *data, u32 size)
 {
     const Elf32_Ehdr *ehdr;
@@ -23,8 +21,15 @@ u32 elf_load(const u8 *data, u32 size)
             data + ehdr->e_phoff + (u32)i * (u32)ehdr->e_phentsize);
         u8 *dst;
         u32 j;
+        u32 vpage;
 
         if (phdr->p_type != 1U) continue;
+
+        vpage = phdr->p_vaddr & ~0xFFFU;
+        while (vpage < phdr->p_vaddr + phdr->p_memsz) {
+            page_map_frame(vpage, page_alloc());
+            vpage += 0x1000U;
+        }
 
         dst = (u8 *)phdr->p_vaddr;
 
@@ -62,9 +67,9 @@ u32 elf_load_process(const u8 *data, u32 size, u32 pd_phys)
         vaddr = phdr->p_vaddr & ~0xFFFU;
 
         for (pg = 0U; pg < phdr->p_memsz; pg += 0x1000U) {
-            u32 frame  = page_alloc();
-            u8 *fdst   = (u8 *)frame;
-            u32 foff   = pg;
+            u32 frame = page_alloc();
+            u8 *fdst  = (u8 *)(frame + KERNEL_OFFSET);
+            u32 foff  = pg;
             u32 k;
 
             for (k = 0U; k < 0x1000U; k++) fdst[k] = 0U;
@@ -82,7 +87,7 @@ u32 elf_load_process(const u8 *data, u32 size, u32 pd_phys)
 
     {
         u32 stack_frame = page_alloc();
-        u8 *s = (u8 *)stack_frame;
+        u8 *s = (u8 *)(stack_frame + KERNEL_OFFSET);
         u32 k;
         for (k = 0U; k < 0x1000U; k++) s[k] = 0U;
         paging_map_user_page(pd_phys, PROC_USTACK_TOP - 0x1000U, stack_frame);
