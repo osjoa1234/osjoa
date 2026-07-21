@@ -85,16 +85,8 @@ user task exited: code=0
 
 | 파일 | 상태 | 설명 |
 |------|------|------|
-| `linker.ld` | 수정 | 23의 higher-half 링커 스크립트 유지 |
-| `boot/entry.asm` | 수정 | 23의 higher-half bootstrap 유지 |
-| `boot/console.h` | 수정 | `KERNEL_OFFSET 0xC0000000U` (23에서 이어짐) |
-| `boot/console.c` | 수정 | VGA 버퍼 `0xB8000 + KERNEL_OFFSET` (23에서 이어짐) |
-| `boot/phys_mem.h` | 수정 | `phys_mem_init(mmap_vaddr, …, kernel_phys_end)` 서명 (23에서 이어짐) |
-| `boot/phys_mem.c` | 수정 | virtual mmap_vaddr 수신 (23에서 이어짐) |
-| `boot/kheap.h` | 수정 | `KHEAP_START=0xC0400000`, `KHEAP_MAX=0xC0800000` (23에서 이어짐) |
-| `boot/kheap.c` | 수정 | local `KHEAP_MAX` 제거 (kheap.h 사용) (23에서 이어짐) |
 | `boot/paging.h` | 수정 | `paging_clone_dir`, `paging_set_dir`, `paging_restore_kernel_dir`, `paging_map_user_page` 선언 추가 |
-| `boot/paging.c` | 수정 | `kernel_pd_phys` 저장; 위 4개 함수 구현 (모든 프레임 접근에 `+ KERNEL_OFFSET`) |
+| `boot/paging.c` | 수정 | `kernel_pd_phys` 저장; 위 4개 함수 구현 |
 | `boot/elf.h` | 수정 | `PROC_USTACK_TOP 0x00400000U` 정의; `elf_load_process` 선언 추가 |
 | `boot/elf.c` | 수정 | `elf_load_process` 구현 (`frame + KERNEL_OFFSET` 접근) |
 | `boot/kernel.c` | 수정 | `user_stack` 제거; `paging_clone_dir` → `elf_load_process` → `paging_set_dir` → `enter_user_mode` |
