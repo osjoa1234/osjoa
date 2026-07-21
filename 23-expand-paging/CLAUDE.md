@@ -88,7 +88,7 @@ Hello from ELF init!
 | `linker.ld` | 수정 | `.boot` VMA=LMA=0x100000; 나머지 VMA=0xC0101000+, LMA=VMA-KERNEL_OFFSET |
 | `boot/entry.asm` | 수정 | `.boot` 섹션에 bootstrap; boot_pd/boot_pt로 임시 매핑; higher_half 점프 |
 | `boot/paging.c` | 수정 | direct map PDE[768+i]; PT 물리 주소 변환; page_map_frame 가상 접근 |
-| `boot/paging.h` | 수정 | `paging_init(u32, u32)` 서명 변경; `paging_mapped_mb()` 추가 |
+| `boot/paging.h` | 수정 | `paging_init(u32 mmap_vaddr, u32 mmap_length)` 서명 변경; `paging_mapped_mb()` 추가 |
 | `boot/kheap.h` | 수정 | `KHEAP_START=0xC0400000`, `KHEAP_MAX=0xC0800000` |
 | `boot/kheap.c` | 수정 | `KHEAP_MAX` 로컬 define 제거 (kheap.h로 이동) |
 | `boot/phys_mem.h` | 수정 | `phys_mem_init` 인자명 변경 (mmap_vaddr, kernel_phys_end) |
