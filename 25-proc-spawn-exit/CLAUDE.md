@@ -114,10 +114,12 @@ processes: init exited code=0
 | `boot/process.c` | 신규 | `proc_init/alloc/spawn/exit`, `proc_run_trampoline` |
 | `boot/gdt.h` | 수정 | `gdt_set_kernel_stack(u32 esp0)` 선언 추가 |
 | `boot/gdt.c` | 수정 | `gdt_set_kernel_stack`: `tss.esp0 = esp0` |
-| `boot/thread.h` | 수정 | `kstack_top`, `pd`, `user_data` 필드; `threads_init(u32)` 서명; `thread_create_with_data` 추가 |
+| `boot/thread.h` | 수정 | `kstack_top`, `pd`, `user_data`(→process_t) 필드; `threads_init(u32)` 서명; `thread_create_with_data` 추가 |
 | `boot/thread.c` | 수정 | `activate_thread`; `wake_sleeping` do-while 수정; `thread_create_with_data` |
 | `boot/syscall.h` | 수정 | `SYS_SPAWN=4` 추가 |
 | `boot/syscall.c` | 수정 | `SYS_EXIT` → `proc_exit`; `SYS_SPAWN` 핸들러 추가 |
+| `boot/elf.h` | 수정 | `PROC_USTACK_TOP` 제거 (process.h로 이동) |
+| `boot/elf.c` | 수정 | `PROC_USTACK_TOP` 로컬 정의 추가 |
 | `boot/kernel.c` | 수정 | `elf.h` 제거; `process.h` 추가; `threads_init((u32)&stack_top)`; `proc_init`; `proc_spawn/proc_get` |
 | `user/init.c` | 수정 | 메시지 변경: "init: running as process 0" |
 | `Makefile` | 수정 | `process.o` 추가; thread.c/syscall.c/kernel.c 의존성 갱신 |

@@ -46,9 +46,6 @@ static const u32 multiboot_magic = 0x2BADB002U;
 extern u32 kernel_end;
 extern u32 stack_top;
 
-extern void enter_user_mode(u32 eip, u32 user_esp);
-
-
 static void halt_forever(void)
 {
     for (;;) {
@@ -67,7 +64,7 @@ static void print_e820(const struct multiboot_info *mbi)
 
     while (offset < mbi->mmap_length) {
         const struct multiboot_mmap_entry *entry =
-            (const struct multiboot_mmap_entry *)(mbi->mmap_addr + offset);
+            (const struct multiboot_mmap_entry *)(mbi->mmap_addr + KERNEL_OFFSET + offset);
         const char *type_name;
 
         switch (entry->type) {
@@ -110,10 +107,10 @@ static void task_b(void)
     }
 }
 
-void kernel_main(u32 magic, u32 multiboot_info)
+void kernel_main(u32 magic, u32 phys_mbi)
 {
     const struct multiboot_info *mbi =
-        (const struct multiboot_info *)multiboot_info;
+        (const struct multiboot_info *)(phys_mbi + KERNEL_OFFSET);
     const u8 ready_color = 0x0A;
     u32 cr3;
 
@@ -133,7 +130,7 @@ void kernel_main(u32 magic, u32 multiboot_info)
     console_printf("VGA console ready: %ux%u color=0x%X\n", VGA_WIDTH, VGA_HEIGHT, ready_color);
 
     console_set_color(0x0B);
-    console_printf("multiboot info at 0x%08X\n", multiboot_info);
+    console_printf("multiboot info at 0x%08X\n", phys_mbi);
 
     gdt_init((u32)&stack_top);
 
@@ -148,12 +145,14 @@ void kernel_main(u32 magic, u32 multiboot_info)
     console_set_color(0x0E);
     print_e820(mbi);
 
-    cr3 = paging_init(mbi->mmap_addr, mbi->mmap_length);
+    cr3 = paging_init(mbi->mmap_addr + KERNEL_OFFSET, mbi->mmap_length);
 
     console_set_color(0x0B);
-    console_printf("paging: %uMB identity mapped CR3=0x%08X\n", paging_mapped_mb(), cr3);
+    console_printf("paging: %uMB direct mapped CR3=0x%08X\n", paging_mapped_mb(), cr3);
 
-    phys_mem_init(mbi->mmap_addr, mbi->mmap_length, (u32)&kernel_end);
+    phys_mem_init(mbi->mmap_addr + KERNEL_OFFSET,
+                  mbi->mmap_length,
+                  (u32)&kernel_end - KERNEL_OFFSET);
 
     console_set_color(0x0F);
     console_printf("phys mem: %u free pages (%uMB usable)\n",
@@ -167,7 +166,7 @@ void kernel_main(u32 magic, u32 multiboot_info)
 
     if (mbi->flags & (1U << 3U)) {
         const struct multiboot_mod *mod =
-            (const struct multiboot_mod *)mbi->mods_addr;
+            (const struct multiboot_mod *)(mbi->mods_addr + KERNEL_OFFSET);
         u32 i;
 
         console_set_color(0x0EU);
@@ -177,7 +176,8 @@ void kernel_main(u32 magic, u32 multiboot_info)
                            mod[i].mod_end - mod[i].mod_start);
         }
 
-        initrd_init(mod[0].mod_start, mod[0].mod_end);
+        initrd_init(mod[0].mod_start + KERNEL_OFFSET,
+                    mod[0].mod_end + KERNEL_OFFSET);
 
         console_set_color(0x0BU);
         console_printf("initramfs: %u file(s) found\n", initrd_file_count());

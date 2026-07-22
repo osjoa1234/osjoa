@@ -5,6 +5,8 @@ typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned int u32;
 
+#define KERNEL_OFFSET 0xC0000000U
+
 enum {
     VGA_WIDTH = 80,
     VGA_HEIGHT = 25
