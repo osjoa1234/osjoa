@@ -2,7 +2,6 @@
 #include "elf.h"
 #include "initrd.h"
 #include "paging.h"
-#include "timer.h"
 #include "console.h"
 
 static process_t proc_table[PROC_MAX];
@@ -21,8 +20,9 @@ static process_t *proc_alloc(void)
 
     for (i = 0U; i < PROC_MAX; i++) {
         if (proc_table[i].state == PROC_FREE) {
-            proc_table[i].state = PROC_RUNNING;
-            proc_table[i].pid   = i;
+            proc_table[i].state  = PROC_RUNNING;
+            proc_table[i].pid    = i;
+            proc_table[i].waiter = 0;
             return &proc_table[i];
         }
     }
@@ -93,6 +93,8 @@ void proc_exit(u32 code)
 
     p->state     = PROC_ZOMBIE;
     p->exit_code = code;
+    if (p->waiter)
+        thread_unpark(p->waiter);
     thread_exit();
     for (;;) { __asm__ volatile ("hlt"); }
 }
@@ -103,12 +105,13 @@ u32 proc_wait(u32 pid, u32 *exit_code)
 
     if (!p) return (u32)-1U;
 
-    while (p->state != PROC_ZOMBIE) {
-        thread_sleep(10U);
-    }
+    p->waiter = thread_current();
+    if (p->state != PROC_ZOMBIE)
+        thread_park();
 
     if (exit_code) *exit_code = p->exit_code;
-    p->state = PROC_FREE;
+    p->state  = PROC_FREE;
+    p->waiter = 0;
     return 0U;
 }
 

@@ -135,13 +135,10 @@ void paging_free_user_pages(u32 pd_phys)
     u32  i;
 
     for (i = 0U; i < 1024U; i++) {
-        u32 pte   = pt0[i];
-        u32 phys  = pte & ~0xFFFU;
-        u32 ident = i * 0x1000U;
-
-        if ((pte & 0x01U) && phys != ident) {
-            page_free(phys);
-            pt0[i] = ident | 0x07U;
+        u32 frame = pt0[i] & ~0xFFFU;
+        if (frame != i * 0x1000U) {
+            page_free(frame);
+            pt0[i] = (i * 0x1000U) | 0x07U;
         }
     }
     flush_tlb();

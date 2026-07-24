@@ -162,6 +162,36 @@ void thread_sleep(u32 ms)
     interrupts_enable();
 }
 
+void thread_park(void)
+{
+    thread_t *prev;
+    thread_t *next;
+
+    interrupts_disable();
+    current->state = THREAD_PARKED;
+
+    prev = current;
+    next = next_runnable(prev);
+
+    if (next == prev) {
+        interrupts_enable();
+        while (current->state == THREAD_PARKED) {
+            __asm__ volatile ("hlt");
+        }
+        return;
+    }
+
+    activate_thread(next);
+    current = next;
+    switch_context(&prev->esp, next->esp);
+    interrupts_enable();
+}
+
+void thread_unpark(thread_t *t)
+{
+    t->state = THREAD_RUNNING;
+}
+
 void thread_exit(void)
 {
     thread_t *prev;

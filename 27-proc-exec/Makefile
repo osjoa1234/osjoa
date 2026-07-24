@@ -32,10 +32,8 @@ KERNELELF    := $(BUILD)/kernel.elf
 ISO          := $(BUILD)/os.iso
 
 USERINIT     := $(BUILD)/init
-USERHELLO    := $(BUILD)/hello
 USERHELLO2   := $(BUILD)/hello2
 USEROBJ      := $(BUILD)/init_user.o
-HELLOOBJ     := $(BUILD)/hello_user.o
 HELLO2OBJ    := $(BUILD)/hello2_user.o
 
 CFLAGS       := -m32 -march=i386 -std=c11 -O2 -Wall -Wextra -ffreestanding -fno-builtin -fno-pic -fno-pie -fno-stack-protector
@@ -116,21 +114,14 @@ $(USEROBJ): user/init.c | $(BUILD)
 $(USERINIT): $(USEROBJ) user/user.ld
 	$(LD) -m elf_i386 -T user/user.ld -nostdlib -o $@ $(USEROBJ)
 
-$(HELLOOBJ): user/hello.c | $(BUILD)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(USERHELLO): $(HELLOOBJ) user/user.ld
-	$(LD) -m elf_i386 -T user/user.ld -nostdlib -o $@ $(HELLOOBJ)
-
 $(HELLO2OBJ): user/hello2.c | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(USERHELLO2): $(HELLO2OBJ) user/user.ld
 	$(LD) -m elf_i386 -T user/user.ld -nostdlib -o $@ $(HELLO2OBJ)
 
-$(INITRAMFS): $(USERINIT) $(USERHELLO) $(USERHELLO2) | $(BUILD)
+$(INITRAMFS): $(USERINIT) $(USERHELLO2) | $(BUILD)
 	cp $(USERINIT) $(INITRDDIR)/init
-	cp $(USERHELLO) $(INITRDDIR)/hello
 	cp $(USERHELLO2) $(INITRDDIR)/hello2
 	cd $(INITRDDIR) && find . | sort | cpio -o --format=newc > ../$(INITRAMFS) 2>/dev/null
 
@@ -153,4 +144,4 @@ run-nogui: $(ISO)
 
 clean:
 	rm -rf $(BUILD)
-	rm -f $(INITRDDIR)/init $(INITRDDIR)/hello $(INITRDDIR)/hello2
+	rm -f $(INITRDDIR)/init $(INITRDDIR)/hello2
