@@ -1,8 +1,8 @@
 # 26 — proc-wait
 
-**목표**: `proc_wait`을 구현해 부모 프로세스(init)가 자식(hello)의 종료를 기다리는 흐름을 완성한다.
+**목표**: `proc_wait`을 event-driven 방식(thread_park/thread_unpark)으로 구현해 부모 프로세스(init)가 자식(hello)의 종료를 기다리는 흐름을 완성한다.
 
-**25에서 이어짐**: 25에서 kernel.c가 proc_spawn 후 hlt 루프 + proc_get으로 종료를 확인했다. 여기서는 `proc_wait(pid, *exit_code)`를 추가해 부모도 자식을 기다릴 수 있게 한다. init이 hello를 spawn하고 wait하는 표준 UNIX 흐름을 완성한다.
+**25에서 이어짐**: 25에서 kernel.c가 proc_spawn 후 hlt 루프 + proc_get으로 종료를 확인했다. 여기서는 `proc_wait(pid, *exit_code)`를 추가해 부모도 자식을 기다릴 수 있게 한다. polling이 아니라 자식이 exit할 때 부모를 직접 깨우는 event-driven 구조를 사용한다. init이 hello를 spawn하고 wait하는 표준 UNIX 흐름을 완성한다.
 
 상위 컨텍스트는 부모 디렉토리의 `CLAUDE.md` 참고.
 
