@@ -8,6 +8,15 @@
 
 ## 핵심 개념
 
+### thread_park / thread_unpark
+
+```c
+void thread_park(void)   // 현재 스레드를 THREAD_PARKED 상태로 전환 후 양보
+void thread_unpark(thread_t *t)  // t->state = THREAD_RUNNING
+```
+
+`THREAD_PARKED`는 `wake_sleeping`(타이머 기반)이 건드리지 않는 별도 상태다. 오직 `thread_unpark` 호출로만 깨어난다.
+
 ### proc_wait(pid, *exit_code)
 
 ```c
@@ -16,23 +25,30 @@ u32 proc_wait(u32 pid, u32 *exit_code)
     process_t *p = proc_get(pid);
     if (!p) return (u32)-1U;
 
-    while (p->state != PROC_ZOMBIE) {
-        thread_sleep(10U);
-    }
+    p->waiter = thread_current();
+    if (p->state != PROC_ZOMBIE)
+        thread_park();
 
     if (exit_code) *exit_code = p->exit_code;
-    p->state = PROC_FREE;
+    p->state  = PROC_FREE;
+    p->waiter = 0;
     return 0U;
 }
 ```
 
-`thread_sleep(10ms)` 루프로 ZOMBIE가 될 때까지 폴링한다. 대기 중에는 CPU를 다른 스레드에 양보한다.
+waiter를 먼저 등록한 뒤 상태를 확인한다. 자식이 이미 ZOMBIE면 park 없이 바로 회수한다.
 
-### 25 wake_sleeping 수정이 여기서 필요한 이유
+### proc_exit에서의 thread_unpark
 
-kernel_main(idle_task)가 `proc_wait → thread_sleep(10ms)` 루프를 돈다. 23-3에서 `wake_sleeping`을 do-while로 수정해 idle_task 자신도 wake 대상에 포함시켰기 때문에, kernel_main이 잠든 뒤 타이머 인터럽트로 깨어날 수 있다.
+```c
+p->state     = PROC_ZOMBIE;
+p->exit_code = code;
+if (p->waiter)
+    thread_unpark(p->waiter);
+thread_exit();
+```
 
-init도 `proc_wait(hello_pid, &code)` 안에서 `thread_sleep(10ms)`를 호출한다. init의 스레드는 idle_task가 아니므로 기존 while 루프에도 포함되지만, do-while 수정이 일관성을 보장한다.
+ZOMBIE로 전환 직후 waiter를 깨운다. waiter가 아직 `thread_park`에 진입하지 않았더라도(race), waiter는 park 직전에 이미 ZOMBIE를 확인하고 park를 건너뛴다. 인터럽트가 비활성화된 구간에서 `thread_park`가 state를 PARKED로 바꾸므로 양쪽 경로 모두 안전하다.
 
 ### 실행 흐름
 
@@ -75,8 +91,10 @@ processes: init exited code=0
 
 | 파일 | 상태 | 설명 |
 |------|------|------|
-| `boot/process.h` | 수정 | `proc_wait(u32 pid, u32 *exit_code)` 선언 추가 |
-| `boot/process.c` | 수정 | `proc_wait` 구현; `timer.h` include 추가 |
+| `boot/thread.h` | 수정 | `THREAD_PARKED` 상수; `thread_park`/`thread_unpark` 선언 |
+| `boot/thread.c` | 수정 | `thread_park`/`thread_unpark` 구현 |
+| `boot/process.h` | 수정 | `process_t`에 `waiter` 필드; `proc_wait` 선언 추가 |
+| `boot/process.c` | 수정 | `proc_alloc`에서 waiter 초기화; `proc_wait` park/unpark 방식으로 구현; `proc_exit`에서 `thread_unpark` 호출 |
 | `boot/syscall.h` | 수정 | `SYS_WAIT=5` 추가 |
 | `boot/syscall.c` | 수정 | `SYS_WAIT` 핸들러 추가 |
 | `user/init.c` | 수정 | `sys_spawn`/`sys_wait` 추가; hello 생성 후 wait |

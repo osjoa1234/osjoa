@@ -18,6 +18,7 @@ typedef struct {
     u32       entry;
     u32       pd_phys;
     thread_t *thread;
+    thread_t *waiter;
 } process_t;
 
 void       proc_init(void);
