@@ -114,4 +114,4 @@ processes: init exited code=0
 
 ## 다음 단계 힌트
 
-- `29-vfs`: 파일 디스크립터, 경로 해석, 단순 VFS 계층
+- `29-wait-queue`: wait queue를 연결 리스트로 교체, `waitpid(-1)` 임의 자식 대기
