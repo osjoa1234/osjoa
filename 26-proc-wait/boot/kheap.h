@@ -3,7 +3,8 @@
 
 #include "console.h"
 
-#define KHEAP_START 0x400000U
+#define KHEAP_START 0xC0400000U
+#define KHEAP_MAX   0xC0800000U
 
 void  kheap_init(void);
 void *kmalloc(u32 size);

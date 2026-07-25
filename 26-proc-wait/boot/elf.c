@@ -63,7 +63,7 @@ u32 elf_load_process(const u8 *data, u32 size, u32 pd_phys)
 
         for (pg = 0U; pg < phdr->p_memsz; pg += 0x1000U) {
             u32 frame  = page_alloc();
-            u8 *fdst   = (u8 *)frame;
+            u8 *fdst   = (u8 *)(frame + KERNEL_OFFSET);
             u32 foff   = pg;
             u32 k;
 
@@ -82,7 +82,7 @@ u32 elf_load_process(const u8 *data, u32 size, u32 pd_phys)
 
     {
         u32 stack_frame = page_alloc();
-        u8 *s = (u8 *)stack_frame;
+        u8 *s = (u8 *)(stack_frame + KERNEL_OFFSET);
         u32 k;
         for (k = 0U; k < 0x1000U; k++) s[k] = 0U;
         paging_map_user_page(pd_phys, PROC_USTACK_TOP - 0x1000U, stack_frame);

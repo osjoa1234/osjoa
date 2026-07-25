@@ -8,7 +8,7 @@ struct console_state {
     u8 color;
 };
 
-static volatile u16 *const vga = (volatile u16 *)0xB8000;
+static volatile u16 *const vga = (volatile u16 *)(0xB8000U + KERNEL_OFFSET);
 static struct console_state console = { 0U, 0U, 0x0FU };
 
 static u16 vga_entry(u8 character, u8 color)
