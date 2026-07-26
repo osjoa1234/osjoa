@@ -6,7 +6,6 @@ global gdt_flush
 global tss_flush
 global enter_user_mode
 global enter_user_mode_fork
-global enter_user_mode_clone
 
 gdt_flush:
     mov eax, [esp + 4]
@@ -57,25 +56,6 @@ enter_user_mode_fork:
     push 0x1B
     push ecx
     xor eax, eax
-    iret
-
-enter_user_mode_clone:
-    mov eax, [esp + 4]
-    mov ebx, [esp + 8]
-    mov ecx, [esp + 12]
-    sub ecx, 8
-    mov dword [ecx], 0
-    mov [ecx + 4], ebx
-    mov bx, 0x23
-    mov ds, bx
-    mov es, bx
-    mov fs, bx
-    mov gs, bx
-    push 0x23
-    push ecx
-    push 0x202
-    push 0x1B
-    push eax
     iret
 
 SECTION .note.GNU-stack noalloc noexec nowrite progbits

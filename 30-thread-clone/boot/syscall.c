@@ -55,7 +55,7 @@ void syscall_dispatch(struct interrupt_frame *frame)
         frame->eax = proc_fork(frame->eip, frame->user_esp);
         break;
     case SYS_CLONE:
-        frame->eax = proc_clone(frame->ebx, frame->ecx);
+        frame->eax = proc_clone(frame->eip);
         break;
     case SYS_THREAD_EXIT:
         proc_thread_exit();

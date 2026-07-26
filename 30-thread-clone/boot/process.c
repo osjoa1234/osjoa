@@ -11,7 +11,6 @@ static wait_queue_t kernel_wait_chldexit;
 
 extern void enter_user_mode(u32 eip, u32 esp);
 extern void enter_user_mode_fork(u32 eip, u32 esp);
-extern void enter_user_mode_clone(u32 fn, u32 arg, u32 user_esp);
 
 void proc_init(void)
 {
@@ -64,21 +63,19 @@ static void fork_child_trampoline(void)
 
 typedef struct {
     process_t *proc;
-    u32        fn;
-    u32        arg;
-    u32        ustack_top;
-} clone_ctx_t;
+    u32        user_eip;
+    u32        user_esp;
+} clone_fork_ctx_t;
 
-static void clone_trampoline(void)
+static void clone_fork_trampoline(void)
 {
-    clone_ctx_t *ctx  = (clone_ctx_t *)thread_current()->user_data;
-    process_t   *proc = ctx->proc;
-    u32          fn   = ctx->fn;
-    u32          arg  = ctx->arg;
-    u32          utop = ctx->ustack_top;
+    clone_fork_ctx_t *ctx  = (clone_fork_ctx_t *)thread_current()->user_data;
+    process_t        *proc = ctx->proc;
+    u32               eip  = ctx->user_eip;
+    u32               esp  = ctx->user_esp;
     thread_current()->user_data = proc;
     kfree(ctx);
-    enter_user_mode_clone(fn, arg, utop);
+    enter_user_mode_fork(eip, esp);
 }
 
 u32 proc_spawn(const char *name)
@@ -210,16 +207,16 @@ void proc_thread_exit(void)
     for (;;) { __asm__ volatile ("hlt"); }
 }
 
-u32 proc_clone(u32 fn, u32 arg)
+u32 proc_clone(u32 user_eip)
 {
-    process_t  *p    = (process_t *)thread_current()->user_data;
-    u32         utop = p->next_ustack;
-    u32         frame;
-    u8         *fdst;
-    u32         k;
-    clone_ctx_t *ctx;
-    thread_t   *t;
-    thread_t   *last;
+    process_t        *p    = (process_t *)thread_current()->user_data;
+    u32               utop = p->next_ustack;
+    u32               frame;
+    u8               *fdst;
+    u32               k;
+    clone_fork_ctx_t *ctx;
+    thread_t         *t;
+    thread_t         *last;
 
     frame = page_alloc();
     if (!frame) return (u32)-1U;
@@ -229,14 +226,13 @@ u32 proc_clone(u32 fn, u32 arg)
 
     p->next_ustack -= 0x1000U;
 
-    ctx = (clone_ctx_t *)kmalloc(sizeof(clone_ctx_t));
+    ctx = (clone_fork_ctx_t *)kmalloc(sizeof(clone_fork_ctx_t));
     if (!ctx) { p->next_ustack += 0x1000U; return (u32)-1U; }
-    ctx->proc       = p;
-    ctx->fn         = fn;
-    ctx->arg        = arg;
-    ctx->ustack_top = utop;
+    ctx->proc     = p;
+    ctx->user_eip = user_eip;
+    ctx->user_esp = utop;
 
-    t = thread_create_with_data(clone_trampoline, ctx);
+    t = thread_create_with_data(clone_fork_trampoline, ctx);
     if (!t) { p->next_ustack += 0x1000U; kfree(ctx); return (u32)-1U; }
     t->pd = p->pd_phys;
 
