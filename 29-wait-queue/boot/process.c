@@ -4,7 +4,8 @@
 #include "paging.h"
 #include "console.h"
 
-static process_t proc_table[PROC_MAX];
+static process_t  proc_table[PROC_MAX];
+static wait_queue_t kernel_wait_chldexit;
 
 extern void enter_user_mode(u32 eip, u32 esp);
 extern void enter_user_mode_fork(u32 eip, u32 esp);
@@ -13,6 +14,7 @@ void proc_init(void)
 {
     u32 i;
     for (i = 0U; i < PROC_MAX; i++) proc_table[i].state = PROC_FREE;
+    wq_init(&kernel_wait_chldexit);
 }
 
 static process_t *proc_alloc(void)
@@ -24,8 +26,7 @@ static process_t *proc_alloc(void)
             proc_table[i].state      = PROC_RUNNING;
             proc_table[i].pid        = i;
             proc_table[i].parent_pid = PROC_NO_PARENT;
-            wq_init(&proc_table[i].waiters);
-            wq_init(&proc_table[i].any_child_waiters);
+            wq_init(&proc_table[i].wait_chldexit);
             return &proc_table[i];
         }
     }
@@ -144,12 +145,12 @@ void proc_exit(u32 code)
     p->state     = PROC_ZOMBIE;
     p->exit_code = code;
 
-    wq_wake_all(&p->waiters);
-
     if (p->parent_pid != PROC_NO_PARENT) {
         parent = proc_get(p->parent_pid);
         if (parent)
-            wq_wake_all(&parent->any_child_waiters);
+            wq_wake_all(&parent->wait_chldexit);
+    } else {
+        wq_wake_all(&kernel_wait_chldexit);
     }
 
     thread_exit();
@@ -166,7 +167,7 @@ u32 proc_wait(u32 pid, u32 *exit_code)
         for (;;) {
             zombie = find_zombie_child(caller->pid);
             if (zombie) break;
-            wq_add(&caller->any_child_waiters, thread_current());
+            wq_add(&caller->wait_chldexit, thread_current());
             thread_park();
         }
 
@@ -177,15 +178,18 @@ u32 proc_wait(u32 pid, u32 *exit_code)
     }
 
     {
-        process_t *p = proc_get(pid);
+        process_t    *caller = (process_t *)thread_current()->user_data;
+        wait_queue_t *wq     = caller ? &caller->wait_chldexit : &kernel_wait_chldexit;
+        process_t    *p;
 
-        if (!p) return (u32)-1U;
-
-        if (p->state != PROC_ZOMBIE) {
-            wq_add(&p->waiters, thread_current());
+        for (;;) {
+            p = proc_get(pid);
+            if (!p || p->state == PROC_ZOMBIE) break;
+            wq_add(wq, thread_current());
             thread_park();
         }
 
+        if (!p) return (u32)-1U;
         if (exit_code) *exit_code = p->exit_code;
         p->state = PROC_FREE;
         return pid;

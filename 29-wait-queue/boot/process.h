@@ -22,8 +22,7 @@ typedef struct {
     u32          user_esp;
     u32          pd_phys;
     thread_t    *thread;
-    wait_queue_t waiters;
-    wait_queue_t any_child_waiters;
+    wait_queue_t wait_chldexit;
 } process_t;
 
 void       proc_init(void);
