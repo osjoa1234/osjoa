@@ -91,7 +91,6 @@ processes: init exited code=0
 | `boot/kernel.c` | 수정 | `vfs.h` 포함; `initrd_ops` 정의; `vfs_init` + `vfs_mount("/", &initrd_ops)` 호출 |
 | `Makefile` | 수정 | `VFSOBJ` 추가; 빌드 의존성 갱신 |
 | `user/init.c` | 수정 | 스레드 데모 코드 제거; `sys_open`/`sys_read`/`sys_close` 추가; VFS 파일 읽기 데모; 인라인 asm clobber 수정 |
-| `user/clone.asm` | 유지 | 링크 유지 (이후 단계에서 재사용) |
 | `initrd/hello.txt` | 신규 | VFS로 읽을 텍스트 파일 ("hello, world!\n") |
 
 ## 다음 단계 힌트
