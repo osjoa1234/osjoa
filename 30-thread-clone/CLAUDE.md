@@ -114,4 +114,4 @@ processes: init exited code=0
 
 ## 다음 단계 힌트
 
-- `31-vfs`: 파일 디스크립터, 경로 해석, 단순 VFS 계층
+- `31-clone-trampoline`: 유저 공간이 스레드 스택을 소유, `clone_trampoline` ASM 심으로 `thread_create(fn, arg)` 라이브러리 구현

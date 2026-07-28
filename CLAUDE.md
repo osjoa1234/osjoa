@@ -75,13 +75,14 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 28 | `28-proc-fork` | `SYS_FORK` — eager copy로 자식 생성, fork+exec 패턴 완성 |
 | 29 | `29-wait-queue` | wait queue를 연결 리스트로 교체, `waitpid(-1)` 임의 자식 대기 |
 | 30 | `30-thread-clone` | `process_t` 1:N 스레드 구조, `SYS_CLONE`, 스레드별 독립 유저스택 |
-| 31 | `31-vfs` | 파일 디스크립터, 경로 해석, 단순 VFS 계층 |
-| 32 | `32-user-shell` | 사용자 모드 셸과 기본 명령 실행 |
-| 33 | `33-pci` | PCI 버스 탐색과 장치 열거 |
-| 34 | `34-net-driver` | NIC 드라이버와 Ethernet 프레임 송수신 |
-| 35 | `35-net-ipv4` | ARP, IPv4, ICMP ping |
-| 36 | `36-net-udp` | UDP 송수신과 간단한 소켓 API |
-| 37 | `37-net-tcp` | 최소 TCP 연결과 사용자 공간 네트워크 프로그램 |
+| 31 | `31-clone-trampoline` | 유저 공간 스택 소유, `clone_trampoline` ASM 심, `thread_create(fn, arg)` 라이브러리 |
+| 32 | `32-vfs` | 파일 디스크립터, 경로 해석, 단순 VFS 계층 |
+| 33 | `33-user-shell` | 사용자 모드 셸과 기본 명령 실행 |
+| 34 | `34-pci` | PCI 버스 탐색과 장치 열거 |
+| 35 | `35-net-driver` | NIC 드라이버와 Ethernet 프레임 송수신 |
+| 36 | `36-net-ipv4` | ARP, IPv4, ICMP ping |
+| 37 | `37-net-udp` | UDP 송수신과 간단한 소켓 API |
+| 38 | `38-net-tcp` | 최소 TCP 연결과 사용자 공간 네트워크 프로그램 |
 
 12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → PCI/네트워크 순서로 기반을 쌓는다.
 
