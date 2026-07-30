@@ -1,6 +1,6 @@
 # 33 — fd-stdio
 
-**목표**: `vfs_ops_t`에 `write`를 추가하고, console을 VFS 백엔드로 연결하여 fd 1로 쓰는 경로를 완성한다. 프로세스 생성 시 fd 0/1/2를 console로 미리 열어두고, fork 시 자식에게 상속한다.
+**목표**: `vfs_ops_t`에 `write`를 추가하고, console을 VFS 백엔드로 연결하여 fd 1로 쓰는 경로를 완성한다. fd 0은 `con_read` → `keyboard_getchar()`로 연결해 stdin도 동작시킨다. 프로세스 생성 시 fd 0/1/2를 console로 미리 열어두고, fork 시 자식에게 상속한다.
 
 **32에서 이어짐**: 32에서는 read 방향만 VFS를 통했고, `SYS_WRITE`는 커널 콘솔을 직접 호출했다. 여기서는 `SYS_WRITE`도 fd 경유로 바꿔서 `write(1, buf, n)`이 fd 테이블 → vfs_ops_t.write → console_dev 경로를 타도록 한다.
 
@@ -19,6 +19,20 @@ write(1, buf, n)          ← 유저 syscall
   → con_write(...)        ← console_dev 백엔드
   → console_putchar(c)    ← VGA 출력
 ```
+
+### read 경로 (stdin)
+
+```
+read(0, buf, n)           ← 유저 syscall
+  → SYS_READ              ← 커널 syscall_dispatch
+  → p->fds[0]             ← 프로세스 fd 테이블 조회
+  → vfs_read(f, buf, n)   ← VFS 레이어
+  → f->ops->read(...)     ← vtable 디스패치
+  → con_read(...)         ← console_dev 백엔드
+  → keyboard_getchar()    ← 키보드 드라이버 (블로킹)
+```
+
+`con_read`는 `keyboard_getchar()`를 한 글자씩 호출하며, 각 글자를 `console_putchar`로 에코한 뒤 `\n`을 만나면 반환한다.
 
 ### vfs_ops_t.write
 
@@ -60,6 +74,8 @@ make clean
 
 ## 완료 기준
 
+`make run` (QEMU GUI, 키보드 입력 가능):
+
 ```
 processes: init spawned pid=0
 init: stdout via fd 1
@@ -67,10 +83,14 @@ child: inherited fd 1 works
 process 1 exited: code=0
 init: child done
 init: read: hello, world!
+init: type something: hello
+init: stdin got: hello
 init: fd-stdio done
 process 0 exited: code=0
 processes: init exited code=0
 ```
+
+`make run-nogui`는 stdin read 직전까지 출력하고 멈춘다 (키보드 입력 없음).
 
 ## 이전 단계 대비 변경 파일
 
@@ -79,13 +99,13 @@ processes: init exited code=0
 | `boot/console.h` | 수정 | `console_putchar(u8 c)` 선언 추가 |
 | `boot/console.c` | 수정 | `console_putchar` 공개 함수 추가 (`console_put_char` 래퍼) |
 | `boot/console_dev.h` | 신규 | console VFS 백엔드 헤더 (`console_dev_open` 선언) |
-| `boot/console_dev.c` | 신규 | `console_ops` vtable + `con_write` → `console_putchar`; `console_dev_open` 구현 |
+| `boot/console_dev.c` | 신규 | `console_ops` vtable + `con_write` → `console_putchar`; `con_read` → `keyboard_getchar` (에코 포함); `console_dev_open` 구현 |
 | `boot/vfs.h` | 수정 | `vfs_ops_t`에 `write` 함수 포인터 추가; `vfs_write`, `vfs_dup` 선언 |
 | `boot/vfs.c` | 수정 | `vfs_write` — NULL 체크 후 vtable 디스패치; `vfs_dup` — 같은 ops로 새 `vfs_file_t` 할당 |
 | `boot/process.c` | 수정 | `console_dev.h` 포함; `proc_spawn` — fd 0/1/2 console 열기; `proc_fork` — `vfs_dup`으로 fd 복사; `proc_exec` — fd 3 이상만 닫기 |
 | `boot/syscall.c` | 수정 | `sys_write` → `(fd, buf, len)` 인터페이스로 교체, VFS 경유; `console.h` include 제거 |
 | `boot/kernel.c` | 수정 | `initrd_ops`에 NULL write 추가; 부팅 메시지에 "fd-stdio" 추가 |
-| `user/init.c` | 수정 | `sys_write(fd, buf, len)` 새 인터페이스; `sys_fork`/`sys_wait` 추가; fork로 fd 1 상속 데모 |
+| `user/init.c` | 수정 | `sys_write(fd, buf, len)` 새 인터페이스; `sys_fork`/`sys_wait` 추가; fork로 fd 1 상속 데모; `sys_read(0, ...)` stdin 키보드 입력 데모 |
 | `Makefile` | 수정 | `CONDEVOBJ` 추가; 빌드·링크 의존성 갱신 |
 
 ## 다음 단계 힌트

@@ -75,6 +75,11 @@ void _start(void)
     sys_write(1U, buf, n);
     sys_close(fd);
 
+    writes("init: type something: ");
+    n = sys_read(0U, buf, 63U);
+    writes("init: stdin got: ");
+    sys_write(1U, buf, n);
+
     writes("init: fd-stdio done\n");
     sys_exit(0U);
     for (;;) {}
