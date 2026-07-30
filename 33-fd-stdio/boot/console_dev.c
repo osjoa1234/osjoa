@@ -9,11 +9,21 @@ static void con_close(int bfd)         { (void)bfd; }
 static u32 con_read(int bfd, u8 *buf, u32 len)
 {
     (void)bfd;
-    u32 i;
-    for (i = 0U; i < len; i++) {
-        buf[i] = (u8)keyboard_getchar();
-        console_putchar(buf[i]);
-        if (buf[i] == '\n') { i++; break; }
+    u32 i = 0U;
+    while (i < len) {
+        u8 c = (u8)keyboard_getchar();
+        if (c == '\b') {
+            if (i > 0U) {
+                i--;
+                console_putchar('\b');
+                console_putchar(' ');
+                console_putchar('\b');
+            }
+            continue;
+        }
+        buf[i++] = c;
+        console_putchar(c);
+        if (c == '\n') break;
     }
     return i;
 }
