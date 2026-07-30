@@ -225,7 +225,9 @@ void interrupt_dispatch(struct interrupt_frame *frame)
     }
 
     if (frame->vector == 0x80U) {
+        __asm__ volatile ("sti");
         syscall_dispatch(frame);
+        __asm__ volatile ("cli");
         return;
     }
 
