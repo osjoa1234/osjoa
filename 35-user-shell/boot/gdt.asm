@@ -6,7 +6,6 @@ global gdt_flush
 global tss_flush
 global enter_user_mode
 global enter_user_mode_fork
-global enter_user_mode_full
 
 gdt_flush:
     mov eax, [esp + 4]
@@ -43,23 +42,8 @@ enter_user_mode:
     push eax
     iret
 
-enter_user_mode_fork:
-    mov ecx, [esp + 4]
-    mov edx, [esp + 8]
-    mov bx, 0x23
-    mov ds, bx
-    mov es, bx
-    mov fs, bx
-    mov gs, bx
-    push 0x23
-    push edx
-    push 0x202
-    push 0x1B
-    push ecx
-    xor eax, eax
-    iret
 
-enter_user_mode_full:
+enter_user_mode_fork:
     mov eax, [esp + 4]
     mov bx, 0x23
     mov ds, bx

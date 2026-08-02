@@ -33,7 +33,6 @@ typedef struct {
     u32          state;
     u32          exit_code;
     u32          entry;
-    u32          user_esp;
     fork_resume_t fork_ctx;
     u32          pd_phys;
     thread_t    *threads;
@@ -47,7 +46,7 @@ u32        proc_fork(const fork_resume_t *ctx);
 void       proc_exec(const char *name);
 void       proc_exit(u32 code);
 void       proc_thread_exit(void);
-u32        proc_clone(u32 user_eip, u32 child_stack);
+u32        proc_clone(const fork_resume_t *ctx);
 u32        proc_wait(u32 pid, u32 *exit_code);
 process_t *proc_get(u32 pid);
 

@@ -51,12 +51,34 @@ void syscall_dispatch(struct interrupt_frame *frame)
         proc_exec((const char *)frame->ebx);
         frame->eax = (u32)-1U;
         break;
-    case SYS_FORK:
-        frame->eax = proc_fork(frame->eip, frame->user_esp);
+    case SYS_FORK: {
+        fork_resume_t ctx;
+        ctx.edi      = frame->edi;
+        ctx.esi      = frame->esi;
+        ctx.ebp      = frame->ebp;
+        ctx.ebx      = frame->ebx;
+        ctx.edx      = frame->edx;
+        ctx.ecx      = frame->ecx;
+        ctx.eip      = frame->eip;
+        ctx.user_esp = frame->user_esp;
+        ctx.eflags   = frame->eflags;
+        frame->eax   = proc_fork(&ctx);
         break;
-    case SYS_CLONE:
-        frame->eax = proc_clone(frame->eip);
+    }
+    case SYS_CLONE: {
+        fork_resume_t ctx;
+        ctx.edi      = frame->edi;
+        ctx.esi      = frame->esi;
+        ctx.ebp      = frame->ebp;
+        ctx.ebx      = frame->ebx;
+        ctx.edx      = frame->edx;
+        ctx.ecx      = frame->ecx;
+        ctx.eip      = frame->eip;
+        ctx.user_esp = frame->user_esp;
+        ctx.eflags   = frame->eflags;
+        frame->eax   = proc_clone(&ctx);
         break;
+    }
     case SYS_THREAD_EXIT:
         proc_thread_exit();
         break;

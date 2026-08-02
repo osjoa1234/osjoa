@@ -37,20 +37,21 @@ process_t
 
 ### proc_clone 흐름
 
-SYS_CLONE은 SYS_FORK와 같은 fork-style로 동작한다. `proc_clone(user_eip)`는 syscall 진입 시점의 EIP(= `int $0x80` 다음 명령)를 받아 자식 스레드가 같은 지점에서 실행을 재개하게 한다. 부모에게는 `t->id`를, 자식 스레드에게는 `enter_user_mode_fork`의 `xor eax, eax`로 0을 반환한다.
+SYS_CLONE은 SYS_FORK와 동일하게 `interrupt_frame` 전체를 `fork_resume_t`로 복사한 뒤 `proc_clone(&ctx)`를 호출한다. `proc_clone(const fork_resume_t *ctx)`는 새 스택 페이지를 할당하고, `fork_resume_t r = *ctx; r.user_esp = utop`으로 esp만 새 스택 top으로 교체한다. 부모에게는 `t->id`를, 자식 스레드에게는 `enter_user_mode_fork`의 `xor eax, eax`로 0을 반환한다.
 
 ```
 1. p->next_ustack에서 스택 top(utop) 읽기
-2. page_alloc() → 페이지 0으로 초기화 → paging_map_user_page(pd, utop-0x1000, frame)
+2. page_alloc() → 페이지 0으로 초기화 → paging_map_user_page(pd, utop-0x1000, phys)
 3. p->next_ustack -= 0x1000
-4. clone_fork_ctx_t { proc, user_eip, user_esp=utop } 할당  ← fork와 동일한 구조체 재사용
-5. thread_create_with_data(clone_fork_trampoline, ctx)      ← fork와 동일한 trampoline 재사용
-6. t->pd = p->pd_phys  (같은 PD 공유)
-7. p->threads 연결 리스트 끝에 t 연결
-8. 반환: t->id (부모) / 0 (자식, eax를 xor로 클리어)
+4. fork_resume_t r = *ctx; r.user_esp = utop  ← 레지스터 전체 복사, esp만 새 스택으로 교체
+5. clone_fork_ctx_t { proc, resume=r } 할당
+6. thread_create_with_data(clone_fork_trampoline, cctx)
+7. t->pd = p->pd_phys  (같은 PD 공유)
+8. p->threads 연결 리스트 끝에 t 연결
+9. 반환: t->id (부모) / 0 (자식, eax를 xor로 클리어)
 ```
 
-`clone_fork_trampoline`에서는 ctx를 꺼낸 뒤 `thread_current()->user_data = proc`으로 교체하고, ctx를 kfree한 다음 `enter_user_mode_fork(eip, esp)`를 호출한다. 자식 스레드는 SYS_CLONE `int $0x80` 직후 주소로 복귀하며, eax=0이므로 `if (tid == 0)` 분기를 탄다. 새 gdt.asm 함수는 추가하지 않고 기존 `enter_user_mode_fork`를 그대로 재사용한다.
+`clone_fork_trampoline`에서는 cctx를 꺼낸 뒤 `thread_current()->user_data = proc`으로 교체하고, cctx를 kfree한 다음 `enter_user_mode_fork(&r)`을 호출한다. 자식 스레드는 SYS_CLONE `int $0x80` 직후 주소로 복귀하며, eax=0이므로 `if (tid == 0)` 분기를 탄다. fork와 clone 모두 `enter_user_mode_fork`를 사용하며, `enter_user_mode_clone`은 존재하지 않는다.
 
 ### SYS_THREAD_EXIT (9)
 
@@ -105,10 +106,10 @@ processes: init exited code=0
 |------|------|------|
 | `boot/thread.h` | 수정 | `proc_next` 필드 추가 (프로세스 내부 스레드 연결 리스트) |
 | `boot/thread.c` | 수정 | `thread_create_with_data`: `proc_next = 0` 초기화 |
-| `boot/process.h` | 수정 | `thread_t *thread` → `thread_t *threads`; `next_ustack` 추가; `PROC_USTACK_SIZE` 상수 추가; `proc_clone`/`proc_thread_exit` 선언 |
-| `boot/process.c` | 수정 | `proc_alloc` — next_ustack 초기화; `proc_spawn`/`proc_fork` — threads/proc_next 설정; `proc_exec` — next_ustack 리셋; `proc_exit` — threads 리스트 순회해 나머지 스레드 THREAD_DEAD 처리; `proc_clone`/`proc_thread_exit` 추가; `clone_fork_ctx_t`·`clone_fork_trampoline` 재사용(fork-style clone); phys_mem.h·kheap.h include 추가 |
+| `boot/process.h` | 수정 | `thread_t *thread` → `thread_t *threads`; `next_ustack` 추가; `PROC_USTACK_SIZE` 상수 추가; `proc_clone(const fork_resume_t *ctx)`/`proc_thread_exit` 선언 |
+| `boot/process.c` | 수정 | `proc_alloc` — next_ustack 초기화; `proc_spawn`/`proc_fork` — threads/proc_next 설정; `proc_exec` — next_ustack 리셋; `proc_exit` — threads 리스트 순회해 나머지 스레드 THREAD_DEAD 처리; `proc_clone`/`proc_thread_exit` 추가; `clone_fork_ctx_t { proc, fork_resume_t resume }`·`clone_fork_trampoline`(enter_user_mode_fork(&r) 호출) 추가; phys_mem.h·kheap.h include 추가 |
 | `boot/syscall.h` | 수정 | `SYS_CLONE=8`, `SYS_THREAD_EXIT=9` 추가 |
-| `boot/syscall.c` | 수정 | SYS_CLONE → `proc_clone(frame->eip)`, SYS_THREAD_EXIT → `proc_thread_exit` 디스패치 |
+| `boot/syscall.c` | 수정 | SYS_CLONE → `fork_resume_t` 구성(frame 전체 복사) 후 `proc_clone(&ctx)`, SYS_THREAD_EXIT → `proc_thread_exit` 디스패치 |
 | `user/init.c` | 수정 | SYS_CLONE을 fork-style로 호출(eax=8); `tid==0`이면 clone 자식으로 판별해 `worker(n)` 진입; `sys_thread_exit`(eax=9); `done_count` 공유 변수로 동기화 |
 | `Makefile` | 수정 | hello/hello2 빌드 제거; process.c 의존성에 phys_mem.h·kheap.h 추가 |
 

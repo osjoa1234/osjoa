@@ -44,7 +44,7 @@ clone_trampoline:
     ret
 ```
 
-`SYS_CLONE` 진입 시 커널은 `frame->ebx`(=sp)를 `child_stack`으로 받아 `clone_fork_ctx_t.user_esp`에 저장한다. 자식 스레드가 유저 모드로 복귀하면 `enter_user_mode_fork`가 ESP를 이 값으로 세팅하므로, 자식의 스택은 처음부터 `[fn, arg]`를 담은 sp를 가리키게 된다.
+`SYS_CLONE` 진입 시 커널은 `interrupt_frame` 전체를 `fork_resume_t`로 복사하고 `user_esp`에는 `frame->ebx`(=sp, 유저가 넘긴 child_stack)를 설정한다. 자식 스레드가 유저 모드로 복귀하면 `enter_user_mode_fork`가 모든 레지스터를 복원하고 ESP를 child_stack으로 세팅하므로, 자식의 스택은 처음부터 `[fn, arg]`를 담은 sp를 가리키게 된다.
 
 ### thread_create
 
@@ -62,7 +62,7 @@ static unsigned int thread_create(void (*fn)(unsigned int), unsigned int arg)
 
 ### 커널 측 변경
 
-`proc_clone(user_eip, child_stack)` — 스택 할당 코드 전체 제거.
+`proc_clone(const fork_resume_t *ctx)` — 스택 할당 코드 전체 제거. `ctx->user_esp`는 SYS_CLONE 핸들러가 `frame->ebx`(child_stack)로 설정한다.
 
 `process_t`에서 `next_ustack` 필드와 `PROC_USTACK_SIZE` 상수도 제거한다. 커널이 유저 스택 위치를 추적할 이유가 없어졌기 때문이다.
 
@@ -98,9 +98,9 @@ processes: init exited code=0
 
 | 파일 | 상태 | 설명 |
 |------|------|------|
-| `boot/process.h` | 수정 | `PROC_USTACK_SIZE` 상수 제거; `next_ustack` 필드 제거; `proc_clone` 시그니처에 `child_stack` 파라미터 추가 |
-| `boot/process.c` | 수정 | `proc_alloc` — `next_ustack` 초기화 제거; `proc_exec` — `next_ustack` 리셋 제거; `proc_clone` — 스택 할당(`page_alloc`/`paging_map_user_page`) 전체 제거, `child_stack` 파라미터로 `ctx->user_esp` 설정 |
-| `boot/syscall.c` | 수정 | `SYS_CLONE` 핸들러에서 `frame->ebx`를 `child_stack`으로 전달 |
+| `boot/process.h` | 수정 | `PROC_USTACK_SIZE` 상수 제거; `next_ustack` 필드 제거; `proc_clone(const fork_resume_t *ctx)` 시그니처 유지 |
+| `boot/process.c` | 수정 | `proc_alloc` — `next_ustack` 초기화 제거; `proc_exec` — `next_ustack` 리셋 제거; `proc_clone` — 스택 할당(`page_alloc`/`paging_map_user_page`) 전체 제거, `ctx->user_esp`(=child_stack) 그대로 사용 |
+| `boot/syscall.c` | 수정 | `SYS_CLONE` 핸들러에서 `fork_resume_t` 구성, `user_esp = frame->ebx`(child_stack), `proc_clone(&ctx)` 호출 |
 | `user/init.c` | 수정 | `stacks[2][STACK_SIZE]` 정적 버퍼 추가; `thread_create(fn, arg)` 함수 추가; `clone_trampoline` extern 선언; `worker`에서 `sys_thread_exit()` 호출 제거; `_start`에서 raw syscall 대신 `thread_create` 사용 |
 | `user/clone.asm` | 신규 | `clone_trampoline` 구현 — `ebx`에 child_stack 세팅 후 SYS_CLONE, 자식 쪽 fn/arg 디스패치 및 SYS_THREAD_EXIT |
 | `Makefile` | 수정 | `CLONEOBJ` 추가; `USERINIT` 링크에 `CLONEOBJ` 포함 |

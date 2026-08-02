@@ -43,18 +43,23 @@ enter_user_mode:
     iret
 
 enter_user_mode_fork:
-    mov ecx, [esp + 4]
-    mov edx, [esp + 8]
+    mov eax, [esp + 4]
     mov bx, 0x23
     mov ds, bx
     mov es, bx
     mov fs, bx
     mov gs, bx
     push 0x23
-    push edx
-    push 0x202
+    push dword [eax + 28]
+    push dword [eax + 32]
     push 0x1B
-    push ecx
+    push dword [eax + 24]
+    mov edi, [eax + 0]
+    mov esi, [eax + 4]
+    mov ebp, [eax + 8]
+    mov ebx, [eax + 12]
+    mov edx, [eax + 16]
+    mov ecx, [eax + 20]
     xor eax, eax
     iret
 

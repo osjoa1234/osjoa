@@ -33,18 +33,18 @@
 
 `iret` 직전에 `xor eax, eax`를 실행해 자식이 유저 모드로 복귀할 때 `eax = 0`이 되도록 한다. 부모의 `iret`은 인터럽트 핸들러의 `popad`를 거쳐 `frame->eax = child_pid`로 복귀한다.
 
-### proc_fork(user_eip, user_esp)
+### proc_fork(ctx)
 
 ```
 1. proc_alloc() → 자식 process_t 슬롯 확보
 2. paging_clone_dir() → 빈 pt0을 가진 자식 pd 생성
 3. paging_copy_user_pages(parent->pd_phys, child_pd) → 사용자 프레임 eager copy
-4. child->entry = user_eip, child->user_esp = user_esp 저장
+4. child->fork_ctx = *ctx, child->entry = ctx->eip 저장
 5. thread_create_with_data(fork_child_trampoline, child) → 자식 커널 스레드 생성
 6. 부모에게 child->pid 반환
 ```
 
-자식 커널 스레드는 `fork_child_trampoline`에서 시작해 `enter_user_mode_fork(p->entry, p->user_esp)`를 호출한다. 자식은 부모가 `int $0x80` 다음에 복귀할 EIP와 동일한 지점에서 `eax = 0`으로 유저 모드를 시작한다.
+자식 커널 스레드는 `fork_child_trampoline`에서 시작해 `enter_user_mode_fork(&p->fork_ctx)`를 호출한다. 자식은 부모가 `int $0x80` 다음에 복귀할 EIP와 동일한 지점에서 `eax = 0`으로 유저 모드를 시작한다.
 
 ### 실행 흐름
 
@@ -105,7 +105,7 @@ processes: init exited code=0
 | `boot/gdt.asm` | 수정 | `enter_user_mode_fork` 추가: xor eax,eax 후 iret |
 | `boot/paging.h` | 수정 | `paging_copy_user_pages(u32 src, u32 dst)` 선언 추가 |
 | `boot/paging.c` | 수정 | `paging_copy_user_pages` 구현: pt0 순회하며 프레임 복제 |
-| `boot/process.h` | 수정 | `process_t`에 `user_esp` 필드 추가; `proc_fork` 선언 추가 |
+| `boot/process.h` | 수정 | `process_t`에 `fork_ctx` 필드 추가; `proc_fork` 선언 추가 |
 | `boot/process.c` | 수정 | `fork_child_trampoline`, `proc_fork` 구현 추가 |
 | `boot/syscall.h` | 수정 | `SYS_FORK=7` 추가 |
 | `boot/syscall.c` | 수정 | `SYS_FORK` 핸들러: `proc_fork(frame->eip, frame->user_esp)` |

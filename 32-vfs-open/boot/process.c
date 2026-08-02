@@ -10,7 +10,7 @@ static process_t    proc_table[PROC_MAX];
 static wait_queue_t kernel_wait_chldexit;
 
 extern void enter_user_mode(u32 eip, u32 esp);
-extern void enter_user_mode_fork(u32 eip, u32 esp);
+extern void enter_user_mode_fork(const fork_resume_t *ctx);
 
 void proc_init(void)
 {
@@ -59,24 +59,22 @@ static void proc_run_trampoline(void)
 static void fork_child_trampoline(void)
 {
     process_t *p = (process_t *)thread_current()->user_data;
-    enter_user_mode_fork(p->entry, p->user_esp);
+    enter_user_mode_fork(&p->fork_ctx);
 }
 
 typedef struct {
-    process_t *proc;
-    u32        user_eip;
-    u32        user_esp;
+    process_t    *proc;
+    fork_resume_t resume;
 } clone_fork_ctx_t;
 
 static void clone_fork_trampoline(void)
 {
     clone_fork_ctx_t *ctx  = (clone_fork_ctx_t *)thread_current()->user_data;
     process_t        *proc = ctx->proc;
-    u32               eip  = ctx->user_eip;
-    u32               esp  = ctx->user_esp;
+    fork_resume_t     r    = ctx->resume;
     thread_current()->user_data = proc;
     kfree(ctx);
-    enter_user_mode_fork(eip, esp);
+    enter_user_mode_fork(&r);
 }
 
 u32 proc_spawn(const char *name)
@@ -111,7 +109,7 @@ u32 proc_spawn(const char *name)
     return p->pid;
 }
 
-u32 proc_fork(u32 user_eip, u32 user_esp)
+u32 proc_fork(const fork_resume_t *ctx)
 {
     process_t *parent = (process_t *)thread_current()->user_data;
     process_t *child;
@@ -124,8 +122,8 @@ u32 proc_fork(u32 user_eip, u32 user_esp)
     child_pd = paging_clone_dir();
     paging_copy_user_pages(parent->pd_phys, child_pd);
 
-    child->entry      = user_eip;
-    child->user_esp   = user_esp;
+    child->fork_ctx   = *ctx;
+    child->entry      = ctx->eip;
     child->pd_phys    = child_pd;
     child->parent_pid = parent->pid;
 
@@ -217,21 +215,20 @@ void proc_thread_exit(void)
     for (;;) { __asm__ volatile ("hlt"); }
 }
 
-u32 proc_clone(u32 user_eip, u32 child_stack)
+u32 proc_clone(const fork_resume_t *ctx)
 {
-    process_t        *p   = (process_t *)thread_current()->user_data;
-    clone_fork_ctx_t *ctx;
+    process_t        *p    = (process_t *)thread_current()->user_data;
+    clone_fork_ctx_t *cctx;
     thread_t         *t;
     thread_t         *last;
 
-    ctx = (clone_fork_ctx_t *)kmalloc(sizeof(clone_fork_ctx_t));
-    if (!ctx) return (u32)-1U;
-    ctx->proc     = p;
-    ctx->user_eip = user_eip;
-    ctx->user_esp = child_stack;
+    cctx = (clone_fork_ctx_t *)kmalloc(sizeof(clone_fork_ctx_t));
+    if (!cctx) return (u32)-1U;
+    cctx->proc   = p;
+    cctx->resume = *ctx;
 
-    t = thread_create_with_data(clone_fork_trampoline, ctx);
-    if (!t) { kfree(ctx); return (u32)-1U; }
+    t = thread_create_with_data(clone_fork_trampoline, cctx);
+    if (!t) { kfree(cctx); return (u32)-1U; }
     t->pd = p->pd_phys;
 
     last = p->threads;

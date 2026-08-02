@@ -8,7 +8,7 @@ static process_t  proc_table[PROC_MAX];
 static wait_queue_t kernel_wait_chldexit;
 
 extern void enter_user_mode(u32 eip, u32 esp);
-extern void enter_user_mode_fork(u32 eip, u32 esp);
+extern void enter_user_mode_fork(const fork_resume_t *ctx);
 
 void proc_init(void)
 {
@@ -54,7 +54,7 @@ static void proc_run_trampoline(void)
 static void fork_child_trampoline(void)
 {
     process_t *p = (process_t *)thread_current()->user_data;
-    enter_user_mode_fork(p->entry, p->user_esp);
+    enter_user_mode_fork(&p->fork_ctx);
 }
 
 u32 proc_spawn(const char *name)
@@ -88,7 +88,7 @@ u32 proc_spawn(const char *name)
     return p->pid;
 }
 
-u32 proc_fork(u32 user_eip, u32 user_esp)
+u32 proc_fork(const fork_resume_t *ctx)
 {
     process_t *parent = (process_t *)thread_current()->user_data;
     process_t *child;
@@ -101,8 +101,8 @@ u32 proc_fork(u32 user_eip, u32 user_esp)
     child_pd = paging_clone_dir();
     paging_copy_user_pages(parent->pd_phys, child_pd);
 
-    child->entry      = user_eip;
-    child->user_esp   = user_esp;
+    child->fork_ctx   = *ctx;
+    child->entry      = ctx->eip;
     child->pd_phys    = child_pd;
     child->parent_pid = parent->pid;
 
