@@ -36,11 +36,11 @@ ISO          := $(BUILD)/os.iso
 
 USERINIT     := $(BUILD)/init
 USEROBJ      := $(BUILD)/init_user.o
-CLONEOBJ     := $(BUILD)/clone_user.o
 USERHELLO    := $(BUILD)/hello
 HELLOOBJ     := $(BUILD)/hello_user.o
 USERHELLO2   := $(BUILD)/hello2
 HELLO2OBJ    := $(BUILD)/hello2_user.o
+CLONEOBJ     := $(BUILD)/clone_user.o
 
 CFLAGS       := -m32 -march=i386 -std=c11 -O2 -Wall -Wextra -ffreestanding -fno-builtin -fno-pic -fno-pie -fno-stack-protector
 LDFLAGS      := -m elf_i386 -T linker.ld -nostdlib
@@ -126,27 +126,27 @@ $(KERNELELF): $(ENTRYOBJ) $(CONSOLEOBJ) $(INTASMOBJ) $(INTOBJ) $(KBOBJ) $(PAGING
 $(USEROBJ): user/init.c | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(HELLOOBJ): user/hello.c | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(HELLO2OBJ): user/hello2.c | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
 $(CLONEOBJ): user/clone.asm | $(BUILD)
 	$(ASM) -f elf32 $< -o $@
 
 $(USERINIT): $(USEROBJ) $(CLONEOBJ) user/user.ld
 	$(LD) -m elf_i386 -T user/user.ld -nostdlib -o $@ $(USEROBJ) $(CLONEOBJ)
 
-$(HELLOOBJ): user/hello.c | $(BUILD)
-	$(CC) $(CFLAGS) -c $< -o $@
+$(USERHELLO): $(HELLOOBJ) $(CLONEOBJ) user/user.ld
+	$(LD) -m elf_i386 -T user/user.ld -nostdlib -o $@ $(HELLOOBJ) $(CLONEOBJ)
 
-$(USERHELLO): $(HELLOOBJ) user/user.ld
-	$(LD) -m elf_i386 -T user/user.ld -nostdlib -o $@ $(HELLOOBJ)
-
-$(HELLO2OBJ): user/hello2.c | $(BUILD)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(USERHELLO2): $(HELLO2OBJ) user/user.ld
-	$(LD) -m elf_i386 -T user/user.ld -nostdlib -o $@ $(HELLO2OBJ)
+$(USERHELLO2): $(HELLO2OBJ) $(CLONEOBJ) user/user.ld
+	$(LD) -m elf_i386 -T user/user.ld -nostdlib -o $@ $(HELLO2OBJ) $(CLONEOBJ)
 
 $(INITRAMFS): $(USERINIT) $(USERHELLO) $(USERHELLO2) | $(BUILD)
-	cp $(USERINIT)   $(INITRDDIR)/init
-	cp $(USERHELLO)  $(INITRDDIR)/hello
+	cp $(USERINIT) $(INITRDDIR)/init
+	cp $(USERHELLO) $(INITRDDIR)/hello
 	cp $(USERHELLO2) $(INITRDDIR)/hello2
 	cd $(INITRDDIR) && find . | sort | cpio -o --format=newc > ../$(INITRAMFS) 2>/dev/null
 

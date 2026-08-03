@@ -40,13 +40,6 @@ user/init.c   → build/init   → initrd/init   (셸)
 
 ### sys_exec 래퍼
 
-```c
-static void sys_exec(const char *name)
-{
-    __asm__ volatile ("int $0x80" : : "a"(6U), "b"(name));
-}
-```
-
 `SYS_EXEC = 6`. 성공하면 리턴하지 않는다(프로세스 이미지가 교체됨). 실패(파일 없음)하면 반환 — 셸은 "not found" 출력 후 `sys_exit(1)`.
 
 ## 명령
@@ -93,12 +86,12 @@ processes: init exited code=0
 | 파일 | 상태 | 설명 |
 |------|------|------|
 | `user/init.c` | 수정 | 고정 시나리오 init → 인터랙티브 셸: 프롬프트·read·fork+exec·wait 루프 |
-| `user/hello.c` | 수정 | 구형 단일인자 sys_write → fd 기반 sys_write(fd, buf, len)로 교체 |
-| `user/hello2.c` | 수정 | 동일, hello2 메시지로 독립 프로그램 정비 |
+| `user/hello.c` | 수정 | 구형 단일인자 sys_write → fd 기반 sys_write(fd, buf, len)로 교체, "hello: Hello from hello!" |
+| `user/hello2.c` | 수정 | 동일, "hello2: Hello from hello2!" |
 | `Makefile` | 수정 | hello/hello2 ELF 빌드 타겟 추가; initrd에 세 파일(init/hello/hello2) 포함 |
 | `boot/kernel.c` | 수정 | 부팅 메시지 "user-shell"로 업데이트 |
 | `CLAUDE.md` | 신규 | 이 문서 |
 
 ## 다음 단계 힌트
 
-- `36-pipe`: `dup2`, `pipe()`, 셸 리다이렉션 (`>`, `|`)
+- `36-linux-abi`: syscall 번호를 Linux i386 ABI에 맞게 정렬 — musl-static 바이너리 실행을 향한 첫 걸음
