@@ -81,17 +81,20 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 34 | `34-vfs-seek` | `vfs_file_t`에 pos 이동, SYS_LSEEK |
 | 35 | `35-user-shell` | 사용자 모드 셸과 기본 명령 실행 |
 | 36 | `36-linux-abi` | syscall 번호를 Linux i386 ABI에 맞게 정렬 (`write=4`, `fork=2`, `execve=11` 등) |
-| 37 | `37-brk` | `process_t`에 heap_end 추가, `sys_brk(45)` 구현 — musl malloc 전제조건 |
-| 38 | `38-tls-stubs` | `set_thread_area(243)` GDT 슬롯, `getpid`/`getuid`/`uname` 등 stub syscall |
-| 39 | `39-musl-hello` | musl-static으로 빌드한 첫 외부 바이너리를 initrd에 넣어 실행 검증 |
-| 40 | `40-mmap` | 익명 `mmap2(192)` + `mprotect`/`fstat` stub — busybox 단순 유틸(`cat`, `echo`) 실행 |
-| 41 | `41-signal` | per-process 시그널 핸들러 테이블, 유저 공간 트램폴린 + `sigreturn`, Ctrl+C→SIGINT |
-| 42 | `42-pipe` | `pipe(42)`, `dup2(63)` — 셸 파이프(`\|`)와 리다이렉션(`>`) |
-| 43 | `43-busybox-sh` | `chdir`, `access`, ioctl stub 추가 — busybox sh를 initrd에서 실행 |
-| 44 | `44-disk-fs` | ATA PIO 디스크 읽기, FAT16/ext2 마운트, VFS 디스크 백엔드 연결 |
-| 45 | `45-vfs-ext` | `getdents`, `mkdir`, `unlink` — `ls`/`rm`이 실제 디스크 FS에서 동작 |
+| 37 | `37-long-mode` | PAE + long mode 진입, 4-level 페이지 테이블, 64비트 GDT/TSS — 커널 64비트 전환 1/3 |
+| 38 | `38-idt-64` | 64비트 IDT 재구성, `syscall` MSR 기반 시스템 콜 진입 — 64비트 전환 2/3 |
+| 39 | `39-port-64` | process/thread/ELF/context_switch 64비트 포팅 완료 — 64비트 전환 3/3 |
+| 40 | `40-brk` | `process_t`에 heap_end 추가, `sys_brk(45)` 구현 — musl malloc 전제조건 |
+| 41 | `41-tls` | `arch_prctl(172)` ARCH_SET_FS, FS.base MSR 설정, `getpid`/`getuid`/`uname` stub |
+| 42 | `42-musl-hello` | musl-static으로 빌드한 첫 외부 바이너리를 initrd에 넣어 실행 검증 |
+| 43 | `43-mmap` | 익명 `mmap2(192)` + `mprotect`/`fstat` stub — busybox 단순 유틸(`cat`, `echo`) 실행 |
+| 44 | `44-signal` | per-process 시그널 핸들러 테이블, 유저 공간 트램폴린 + `sigreturn`, Ctrl+C→SIGINT |
+| 45 | `45-pipe` | `pipe(42)`, `dup2(63)` — 셸 파이프(`\|`)와 리다이렉션(`>`) |
+| 46 | `46-busybox-sh` | `chdir`, `access`, ioctl stub 추가 — busybox sh를 initrd에서 실행 |
+| 47 | `47-disk-fs` | ATA PIO 디스크 읽기, FAT16/ext2 마운트, VFS 디스크 백엔드 연결 |
+| 48 | `48-vfs-ext` | `getdents`, `mkdir`, `unlink` — `ls`/`rm`이 실제 디스크 FS에서 동작 |
 
-12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → Linux ABI 호환 → 외부 바이너리 실행 순서로 기반을 쌓는다.
+12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → Linux ABI 호환 → **37~39에서 64비트 전환** → 외부 바이너리 실행 순서로 기반을 쌓는다.
 
 순서·이름은 진행 중 자유롭게 조정 가능.
 
