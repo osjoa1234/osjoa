@@ -1,0 +1,559 @@
+BITS 64
+
+SECTION .text
+
+extern interrupt_dispatch
+
+global interrupt_stub_table
+
+%macro ISR_NOERR 1
+global interrupt_stub_%1
+interrupt_stub_%1:
+    push qword 0
+    push qword %1
+    jmp interrupt_common
+%endmacro
+
+%macro ISR_ERR 1
+global interrupt_stub_%1
+interrupt_stub_%1:
+    push qword %1
+    jmp interrupt_common
+%endmacro
+
+interrupt_common:
+    push rax
+    push rcx
+    push rdx
+    push rbx
+    push rbp
+    push rsi
+    push rdi
+    mov rdi, rsp
+    call interrupt_dispatch
+    pop rdi
+    pop rsi
+    pop rbp
+    pop rbx
+    pop rdx
+    pop rcx
+    pop rax
+    add rsp, 16
+    iretq
+
+ISR_NOERR 0
+ISR_NOERR 1
+ISR_NOERR 2
+ISR_NOERR 3
+ISR_NOERR 4
+ISR_NOERR 5
+ISR_NOERR 6
+ISR_NOERR 7
+ISR_ERR   8
+ISR_NOERR 9
+ISR_ERR   10
+ISR_ERR   11
+ISR_ERR   12
+ISR_ERR   13
+ISR_ERR   14
+ISR_NOERR 15
+ISR_NOERR 16
+ISR_ERR   17
+ISR_NOERR 18
+ISR_NOERR 19
+ISR_NOERR 20
+ISR_NOERR 21
+ISR_NOERR 22
+ISR_NOERR 23
+ISR_NOERR 24
+ISR_NOERR 25
+ISR_NOERR 26
+ISR_NOERR 27
+ISR_NOERR 28
+ISR_NOERR 29
+ISR_ERR   30
+ISR_NOERR 31
+ISR_NOERR 32
+ISR_NOERR 33
+ISR_NOERR 34
+ISR_NOERR 35
+ISR_NOERR 36
+ISR_NOERR 37
+ISR_NOERR 38
+ISR_NOERR 39
+ISR_NOERR 40
+ISR_NOERR 41
+ISR_NOERR 42
+ISR_NOERR 43
+ISR_NOERR 44
+ISR_NOERR 45
+ISR_NOERR 46
+ISR_NOERR 47
+ISR_NOERR 48
+ISR_NOERR 49
+ISR_NOERR 50
+ISR_NOERR 51
+ISR_NOERR 52
+ISR_NOERR 53
+ISR_NOERR 54
+ISR_NOERR 55
+ISR_NOERR 56
+ISR_NOERR 57
+ISR_NOERR 58
+ISR_NOERR 59
+ISR_NOERR 60
+ISR_NOERR 61
+ISR_NOERR 62
+ISR_NOERR 63
+ISR_NOERR 64
+ISR_NOERR 65
+ISR_NOERR 66
+ISR_NOERR 67
+ISR_NOERR 68
+ISR_NOERR 69
+ISR_NOERR 70
+ISR_NOERR 71
+ISR_NOERR 72
+ISR_NOERR 73
+ISR_NOERR 74
+ISR_NOERR 75
+ISR_NOERR 76
+ISR_NOERR 77
+ISR_NOERR 78
+ISR_NOERR 79
+ISR_NOERR 80
+ISR_NOERR 81
+ISR_NOERR 82
+ISR_NOERR 83
+ISR_NOERR 84
+ISR_NOERR 85
+ISR_NOERR 86
+ISR_NOERR 87
+ISR_NOERR 88
+ISR_NOERR 89
+ISR_NOERR 90
+ISR_NOERR 91
+ISR_NOERR 92
+ISR_NOERR 93
+ISR_NOERR 94
+ISR_NOERR 95
+ISR_NOERR 96
+ISR_NOERR 97
+ISR_NOERR 98
+ISR_NOERR 99
+ISR_NOERR 100
+ISR_NOERR 101
+ISR_NOERR 102
+ISR_NOERR 103
+ISR_NOERR 104
+ISR_NOERR 105
+ISR_NOERR 106
+ISR_NOERR 107
+ISR_NOERR 108
+ISR_NOERR 109
+ISR_NOERR 110
+ISR_NOERR 111
+ISR_NOERR 112
+ISR_NOERR 113
+ISR_NOERR 114
+ISR_NOERR 115
+ISR_NOERR 116
+ISR_NOERR 117
+ISR_NOERR 118
+ISR_NOERR 119
+ISR_NOERR 120
+ISR_NOERR 121
+ISR_NOERR 122
+ISR_NOERR 123
+ISR_NOERR 124
+ISR_NOERR 125
+ISR_NOERR 126
+ISR_NOERR 127
+ISR_NOERR 128
+ISR_NOERR 129
+ISR_NOERR 130
+ISR_NOERR 131
+ISR_NOERR 132
+ISR_NOERR 133
+ISR_NOERR 134
+ISR_NOERR 135
+ISR_NOERR 136
+ISR_NOERR 137
+ISR_NOERR 138
+ISR_NOERR 139
+ISR_NOERR 140
+ISR_NOERR 141
+ISR_NOERR 142
+ISR_NOERR 143
+ISR_NOERR 144
+ISR_NOERR 145
+ISR_NOERR 146
+ISR_NOERR 147
+ISR_NOERR 148
+ISR_NOERR 149
+ISR_NOERR 150
+ISR_NOERR 151
+ISR_NOERR 152
+ISR_NOERR 153
+ISR_NOERR 154
+ISR_NOERR 155
+ISR_NOERR 156
+ISR_NOERR 157
+ISR_NOERR 158
+ISR_NOERR 159
+ISR_NOERR 160
+ISR_NOERR 161
+ISR_NOERR 162
+ISR_NOERR 163
+ISR_NOERR 164
+ISR_NOERR 165
+ISR_NOERR 166
+ISR_NOERR 167
+ISR_NOERR 168
+ISR_NOERR 169
+ISR_NOERR 170
+ISR_NOERR 171
+ISR_NOERR 172
+ISR_NOERR 173
+ISR_NOERR 174
+ISR_NOERR 175
+ISR_NOERR 176
+ISR_NOERR 177
+ISR_NOERR 178
+ISR_NOERR 179
+ISR_NOERR 180
+ISR_NOERR 181
+ISR_NOERR 182
+ISR_NOERR 183
+ISR_NOERR 184
+ISR_NOERR 185
+ISR_NOERR 186
+ISR_NOERR 187
+ISR_NOERR 188
+ISR_NOERR 189
+ISR_NOERR 190
+ISR_NOERR 191
+ISR_NOERR 192
+ISR_NOERR 193
+ISR_NOERR 194
+ISR_NOERR 195
+ISR_NOERR 196
+ISR_NOERR 197
+ISR_NOERR 198
+ISR_NOERR 199
+ISR_NOERR 200
+ISR_NOERR 201
+ISR_NOERR 202
+ISR_NOERR 203
+ISR_NOERR 204
+ISR_NOERR 205
+ISR_NOERR 206
+ISR_NOERR 207
+ISR_NOERR 208
+ISR_NOERR 209
+ISR_NOERR 210
+ISR_NOERR 211
+ISR_NOERR 212
+ISR_NOERR 213
+ISR_NOERR 214
+ISR_NOERR 215
+ISR_NOERR 216
+ISR_NOERR 217
+ISR_NOERR 218
+ISR_NOERR 219
+ISR_NOERR 220
+ISR_NOERR 221
+ISR_NOERR 222
+ISR_NOERR 223
+ISR_NOERR 224
+ISR_NOERR 225
+ISR_NOERR 226
+ISR_NOERR 227
+ISR_NOERR 228
+ISR_NOERR 229
+ISR_NOERR 230
+ISR_NOERR 231
+ISR_NOERR 232
+ISR_NOERR 233
+ISR_NOERR 234
+ISR_NOERR 235
+ISR_NOERR 236
+ISR_NOERR 237
+ISR_NOERR 238
+ISR_NOERR 239
+ISR_NOERR 240
+ISR_NOERR 241
+ISR_NOERR 242
+ISR_NOERR 243
+ISR_NOERR 244
+ISR_NOERR 245
+ISR_NOERR 246
+ISR_NOERR 247
+ISR_NOERR 248
+ISR_NOERR 249
+ISR_NOERR 250
+ISR_NOERR 251
+ISR_NOERR 252
+ISR_NOERR 253
+ISR_NOERR 254
+ISR_NOERR 255
+
+interrupt_stub_table:
+    dq interrupt_stub_0
+    dq interrupt_stub_1
+    dq interrupt_stub_2
+    dq interrupt_stub_3
+    dq interrupt_stub_4
+    dq interrupt_stub_5
+    dq interrupt_stub_6
+    dq interrupt_stub_7
+    dq interrupt_stub_8
+    dq interrupt_stub_9
+    dq interrupt_stub_10
+    dq interrupt_stub_11
+    dq interrupt_stub_12
+    dq interrupt_stub_13
+    dq interrupt_stub_14
+    dq interrupt_stub_15
+    dq interrupt_stub_16
+    dq interrupt_stub_17
+    dq interrupt_stub_18
+    dq interrupt_stub_19
+    dq interrupt_stub_20
+    dq interrupt_stub_21
+    dq interrupt_stub_22
+    dq interrupt_stub_23
+    dq interrupt_stub_24
+    dq interrupt_stub_25
+    dq interrupt_stub_26
+    dq interrupt_stub_27
+    dq interrupt_stub_28
+    dq interrupt_stub_29
+    dq interrupt_stub_30
+    dq interrupt_stub_31
+    dq interrupt_stub_32
+    dq interrupt_stub_33
+    dq interrupt_stub_34
+    dq interrupt_stub_35
+    dq interrupt_stub_36
+    dq interrupt_stub_37
+    dq interrupt_stub_38
+    dq interrupt_stub_39
+    dq interrupt_stub_40
+    dq interrupt_stub_41
+    dq interrupt_stub_42
+    dq interrupt_stub_43
+    dq interrupt_stub_44
+    dq interrupt_stub_45
+    dq interrupt_stub_46
+    dq interrupt_stub_47
+    dq interrupt_stub_48
+    dq interrupt_stub_49
+    dq interrupt_stub_50
+    dq interrupt_stub_51
+    dq interrupt_stub_52
+    dq interrupt_stub_53
+    dq interrupt_stub_54
+    dq interrupt_stub_55
+    dq interrupt_stub_56
+    dq interrupt_stub_57
+    dq interrupt_stub_58
+    dq interrupt_stub_59
+    dq interrupt_stub_60
+    dq interrupt_stub_61
+    dq interrupt_stub_62
+    dq interrupt_stub_63
+    dq interrupt_stub_64
+    dq interrupt_stub_65
+    dq interrupt_stub_66
+    dq interrupt_stub_67
+    dq interrupt_stub_68
+    dq interrupt_stub_69
+    dq interrupt_stub_70
+    dq interrupt_stub_71
+    dq interrupt_stub_72
+    dq interrupt_stub_73
+    dq interrupt_stub_74
+    dq interrupt_stub_75
+    dq interrupt_stub_76
+    dq interrupt_stub_77
+    dq interrupt_stub_78
+    dq interrupt_stub_79
+    dq interrupt_stub_80
+    dq interrupt_stub_81
+    dq interrupt_stub_82
+    dq interrupt_stub_83
+    dq interrupt_stub_84
+    dq interrupt_stub_85
+    dq interrupt_stub_86
+    dq interrupt_stub_87
+    dq interrupt_stub_88
+    dq interrupt_stub_89
+    dq interrupt_stub_90
+    dq interrupt_stub_91
+    dq interrupt_stub_92
+    dq interrupt_stub_93
+    dq interrupt_stub_94
+    dq interrupt_stub_95
+    dq interrupt_stub_96
+    dq interrupt_stub_97
+    dq interrupt_stub_98
+    dq interrupt_stub_99
+    dq interrupt_stub_100
+    dq interrupt_stub_101
+    dq interrupt_stub_102
+    dq interrupt_stub_103
+    dq interrupt_stub_104
+    dq interrupt_stub_105
+    dq interrupt_stub_106
+    dq interrupt_stub_107
+    dq interrupt_stub_108
+    dq interrupt_stub_109
+    dq interrupt_stub_110
+    dq interrupt_stub_111
+    dq interrupt_stub_112
+    dq interrupt_stub_113
+    dq interrupt_stub_114
+    dq interrupt_stub_115
+    dq interrupt_stub_116
+    dq interrupt_stub_117
+    dq interrupt_stub_118
+    dq interrupt_stub_119
+    dq interrupt_stub_120
+    dq interrupt_stub_121
+    dq interrupt_stub_122
+    dq interrupt_stub_123
+    dq interrupt_stub_124
+    dq interrupt_stub_125
+    dq interrupt_stub_126
+    dq interrupt_stub_127
+    dq interrupt_stub_128
+    dq interrupt_stub_129
+    dq interrupt_stub_130
+    dq interrupt_stub_131
+    dq interrupt_stub_132
+    dq interrupt_stub_133
+    dq interrupt_stub_134
+    dq interrupt_stub_135
+    dq interrupt_stub_136
+    dq interrupt_stub_137
+    dq interrupt_stub_138
+    dq interrupt_stub_139
+    dq interrupt_stub_140
+    dq interrupt_stub_141
+    dq interrupt_stub_142
+    dq interrupt_stub_143
+    dq interrupt_stub_144
+    dq interrupt_stub_145
+    dq interrupt_stub_146
+    dq interrupt_stub_147
+    dq interrupt_stub_148
+    dq interrupt_stub_149
+    dq interrupt_stub_150
+    dq interrupt_stub_151
+    dq interrupt_stub_152
+    dq interrupt_stub_153
+    dq interrupt_stub_154
+    dq interrupt_stub_155
+    dq interrupt_stub_156
+    dq interrupt_stub_157
+    dq interrupt_stub_158
+    dq interrupt_stub_159
+    dq interrupt_stub_160
+    dq interrupt_stub_161
+    dq interrupt_stub_162
+    dq interrupt_stub_163
+    dq interrupt_stub_164
+    dq interrupt_stub_165
+    dq interrupt_stub_166
+    dq interrupt_stub_167
+    dq interrupt_stub_168
+    dq interrupt_stub_169
+    dq interrupt_stub_170
+    dq interrupt_stub_171
+    dq interrupt_stub_172
+    dq interrupt_stub_173
+    dq interrupt_stub_174
+    dq interrupt_stub_175
+    dq interrupt_stub_176
+    dq interrupt_stub_177
+    dq interrupt_stub_178
+    dq interrupt_stub_179
+    dq interrupt_stub_180
+    dq interrupt_stub_181
+    dq interrupt_stub_182
+    dq interrupt_stub_183
+    dq interrupt_stub_184
+    dq interrupt_stub_185
+    dq interrupt_stub_186
+    dq interrupt_stub_187
+    dq interrupt_stub_188
+    dq interrupt_stub_189
+    dq interrupt_stub_190
+    dq interrupt_stub_191
+    dq interrupt_stub_192
+    dq interrupt_stub_193
+    dq interrupt_stub_194
+    dq interrupt_stub_195
+    dq interrupt_stub_196
+    dq interrupt_stub_197
+    dq interrupt_stub_198
+    dq interrupt_stub_199
+    dq interrupt_stub_200
+    dq interrupt_stub_201
+    dq interrupt_stub_202
+    dq interrupt_stub_203
+    dq interrupt_stub_204
+    dq interrupt_stub_205
+    dq interrupt_stub_206
+    dq interrupt_stub_207
+    dq interrupt_stub_208
+    dq interrupt_stub_209
+    dq interrupt_stub_210
+    dq interrupt_stub_211
+    dq interrupt_stub_212
+    dq interrupt_stub_213
+    dq interrupt_stub_214
+    dq interrupt_stub_215
+    dq interrupt_stub_216
+    dq interrupt_stub_217
+    dq interrupt_stub_218
+    dq interrupt_stub_219
+    dq interrupt_stub_220
+    dq interrupt_stub_221
+    dq interrupt_stub_222
+    dq interrupt_stub_223
+    dq interrupt_stub_224
+    dq interrupt_stub_225
+    dq interrupt_stub_226
+    dq interrupt_stub_227
+    dq interrupt_stub_228
+    dq interrupt_stub_229
+    dq interrupt_stub_230
+    dq interrupt_stub_231
+    dq interrupt_stub_232
+    dq interrupt_stub_233
+    dq interrupt_stub_234
+    dq interrupt_stub_235
+    dq interrupt_stub_236
+    dq interrupt_stub_237
+    dq interrupt_stub_238
+    dq interrupt_stub_239
+    dq interrupt_stub_240
+    dq interrupt_stub_241
+    dq interrupt_stub_242
+    dq interrupt_stub_243
+    dq interrupt_stub_244
+    dq interrupt_stub_245
+    dq interrupt_stub_246
+    dq interrupt_stub_247
+    dq interrupt_stub_248
+    dq interrupt_stub_249
+    dq interrupt_stub_250
+    dq interrupt_stub_251
+    dq interrupt_stub_252
+    dq interrupt_stub_253
+    dq interrupt_stub_254
+    dq interrupt_stub_255
+
+SECTION .note.GNU-stack noalloc noexec nowrite progbits
