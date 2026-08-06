@@ -1,6 +1,6 @@
 BITS 32
 
-KERNEL_OFFSET equ 0xC0000000
+KERNEL_OFFSET equ 0xFFFFFFFF80000000
 
 SECTION .boot
 
@@ -21,20 +21,26 @@ start:
 
     mov edi, boot_pml4 - KERNEL_OFFSET
     xor eax, eax
-    mov ecx, (4096 * 3) / 4
+    mov ecx, (4096 * 4) / 4
     rep stosd
 
-    mov eax, boot_pdpt - KERNEL_OFFSET
+    mov eax, boot_pdpt_id - KERNEL_OFFSET
     or  eax, 3
     mov [boot_pml4 - KERNEL_OFFSET + 0*8    ], eax
     mov [boot_pml4 - KERNEL_OFFSET + 0*8 + 4], dword 0
 
+    mov eax, boot_pdpt_hi - KERNEL_OFFSET
+    or  eax, 3
+    mov [boot_pml4 - KERNEL_OFFSET + 511*8    ], eax
+    mov [boot_pml4 - KERNEL_OFFSET + 511*8 + 4], dword 0
+
     mov eax, boot_pd - KERNEL_OFFSET
     or  eax, 3
-    mov [boot_pdpt - KERNEL_OFFSET + 0*8    ], eax
-    mov [boot_pdpt - KERNEL_OFFSET + 0*8 + 4], dword 0
-    mov [boot_pdpt - KERNEL_OFFSET + 3*8    ], eax
-    mov [boot_pdpt - KERNEL_OFFSET + 3*8 + 4], dword 0
+    mov [boot_pdpt_id - KERNEL_OFFSET + 0*8    ], eax
+    mov [boot_pdpt_id - KERNEL_OFFSET + 0*8 + 4], dword 0
+
+    mov [boot_pdpt_hi - KERNEL_OFFSET + 510*8    ], eax
+    mov [boot_pdpt_hi - KERNEL_OFFSET + 510*8 + 4], dword 0
 
     mov edi, boot_pd - KERNEL_OFFSET
     mov eax, 0x83
@@ -115,8 +121,9 @@ saved_magic: resd 1
 saved_mbi:   resd 1
 
 alignb 4096
-boot_pml4: resb 4096
-boot_pdpt: resb 4096
-boot_pd:   resb 4096
+boot_pml4:    resb 4096
+boot_pdpt_id: resb 4096
+boot_pdpt_hi: resb 4096
+boot_pd:      resb 4096
 
 SECTION .note.GNU-stack noalloc noexec nowrite progbits

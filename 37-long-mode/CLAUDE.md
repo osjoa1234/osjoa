@@ -18,10 +18,11 @@
 
 ### 4-레벨 페이지 테이블 구조
 
-- PML4[0] → PDPT → PD: identity 매핑 (VA 0x00000000–0x3FFFFFFF)
-- PML4[0] / PDPT[3] → 동일 PD: 상위 절반 (VA 0xC0000000–0xFFFFFFFF)
-- PD에 2MB huge page(bit 7 = PS) 512개 설정 → 물리 0–1GB를 2MB 단위로 커버
-- boot_pml4/pdpt/pd는 entry.asm .bss에서 물리 주소(`X - KERNEL_OFFSET`)로 접근
+- PML4[0]   → boot_pdpt_id[0]  → boot_pd: identity 매핑 (VA 0x00000000–0x3FFFFFFF)
+- PML4[511] → boot_pdpt_hi[510] → boot_pd: 커널 매핑 (VA 0xFFFFFFFF80000000–0xFFFFFFFFBFFFFFFF)
+- 두 PDPT가 동일한 boot_pd를 가리킨다 → 물리 0–1GB를 2MB huge page 512개로 커버
+- VA 0xFFFFFFFF80000000 분해: PML4[511], PDPT[510], PD[0] (bit 47 이상 모두 1)
+- boot_pml4/pdpt_id/pdpt_hi/pd는 entry.asm .bss에서 물리 주소(`symbol - KERNEL_OFFSET`)로 접근
 
 ### 64비트 GDT
 
@@ -55,9 +56,9 @@ retfq                  ; CS:RIP far return
 
 `.text` 섹션에서 `.bss` 심볼을 참조할 때 반드시 `[rel symbol]` 형태를 써야 한다. 일반 참조(`[symbol]`)는 R_X86_64_32S 재배치를 생성하는데, VA가 0xC0000000 이상이면 signed 32비트 범위를 초과해 링커 에러가 발생한다.
 
-### -mcmodel=large 필요 이유
+### -mcmodel=kernel 사용 이유
 
-커널 VA가 0xC0000000(> 2GB signed)이므로 small/kernel model이 불가하다. large model은 모든 심볼 참조에 64비트 절대 주소를 사용한다.
+커널 VA가 0xFFFFFFFF80000000 이상(canonical upper half, 상위 2GB)에 위치한다. `kernel` 모델은 모든 커널 심볼이 최상위 2GB 안에 있음을 가정하며, RIP-relative 또는 부호 확장 32비트 절대 주소로 참조한다. `large` 모델 대비 코드가 더 간결하고 이것이 표준 64비트 커널 레이아웃이다.
 
 ### -mno-sse / -mno-sse2 / -mno-mmx 필수
 
@@ -92,17 +93,20 @@ long mode: kernel ready (IDT/processes in 38/39)
 
 | 파일 | 상태 | 설명 |
 |------|------|------|
-| `boot/entry.asm` | 수정 | BITS 32/64 혼합; 4-레벨 페이지 테이블 초기화; PAE/EFER/CR0 설정; lgdt+jmp 64비트; boot page table용 BSS 추가 |
+| `boot/entry.asm` | 수정 | BITS 32/64 혼합; 4-레벨 페이지 테이블 초기화(PML4[0]/[511], PDPT_id[0], PDPT_hi[510]); PAE/EFER/CR0 설정; lgdt+jmp 64비트; BSS 4테이블(pml4/pdpt_id/pdpt_hi/pd) |
 | `boot/gdt.asm` | 수정 | BITS 64; gdt_flush는 lgdt+세그먼트 재로드+retfq; tss_flush는 ltr |
 | `boot/gdt.c` | 수정 | struct gdt_descriptor(u16+u64 packed); struct tss64(rsp0); gdt[7]; gdt_init(u64); tss_set_desc 16바이트 인코딩 |
 | `boot/gdt.h` | 수정 | gdt_init/gdt_set_kernel_stack 시그니처를 u64 인자로 변경 |
-| `boot/console.h` | 수정 | u64 typedef 추가 |
+| `boot/console.h` | 수정 | u64 typedef; KERNEL_OFFSET 0xFFFFFFFF80000000ULL (canonical upper half) |
+| `boot/phys_mem.h` | 수정 | phys_mem_init의 mmap_addr 타입 u32→u64 |
+| `boot/phys_mem.c` | 수정 | phys_mem_init 시그니처 u64; 포인터 캐스트 u64 offset 적용 |
+| `boot/kernel.c` | 수정 | kend_phys 연산 (u32)((u64)kernel_end - KERNEL_OFFSET) 수정; kernel_main 단순화 |
 | `boot/context_switch.asm` | 수정 | BITS 64; AMD64 ABI; 칼리-세이브 레지스터 저장/복원; stub (39에서 실제 사용) |
 | `boot/interrupts.asm` | 수정 | BITS 64; push qword; iretq; 테이블 엔트리 dq로 변경 |
 | `boot/interrupts.c` | 수정 | read_cr2()의 cr2 변수를 u64로 변경 |
 | `boot/paging.c` | 수정 | flush_tlb/paging_init 등 CR3 관련 u64 캐스트 |
-| `boot/kernel.c` | 수정 | kernel_main 단순화; IDT/타이머/스레드/프로세스 호출 제거 (38/39에서 추가) |
-| `Makefile` | 수정 | qemu-system-x86_64; CFLAGS -m64/-mcmodel=large/-mno-sse/-mno-sse2/-mno-mmx/-mno-red-zone; LDFLAGS -m elf_x86_64; NASM -f elf64 |
+| `linker.ld` | 수정 | KERNEL_OFFSET = 0xFFFFFFFF80000000 (canonical upper half) |
+| `Makefile` | 수정 | qemu-system-x86_64; CFLAGS -m64/-mcmodel=kernel/-mno-sse/-mno-sse2/-mno-mmx/-mno-red-zone; LDFLAGS -m elf_x86_64; NASM -f elf64 |
 | `CLAUDE.md` | 신규 | 이 문서 |
 
 ## 다음 단계 힌트

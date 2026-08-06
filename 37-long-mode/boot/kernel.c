@@ -51,7 +51,7 @@ void kernel_main(u32 magic, u32 phys_mbi)
     console_printf("paging: 4-level PAE active, 2MB huge pages, 1GB identity+kernel\n");
 
     if (mbi->flags & (1U << 6U)) {
-        u32 kend_phys = (u32)(u64)kernel_end - KERNEL_OFFSET;
+        u32 kend_phys = (u32)((u64)kernel_end - KERNEL_OFFSET);
         phys_mem_init(mbi->mmap_addr + KERNEL_OFFSET, mbi->mmap_length, kend_phys);
 
         console_set_color(0x0F);

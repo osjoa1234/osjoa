@@ -42,7 +42,7 @@ USERHELLO2   := $(BUILD)/hello2
 HELLO2OBJ    := $(BUILD)/hello2_user.o
 CLONEOBJ     := $(BUILD)/clone_user.o
 
-CFLAGS       := -m64 -mcmodel=large -std=c11 -O2 -Wall -Wextra -ffreestanding \
+CFLAGS       := -m64 -mcmodel=kernel -std=c11 -O2 -Wall -Wextra -ffreestanding \
                 -fno-builtin -fno-pic -fno-pie -fno-stack-protector -mno-red-zone \
                 -mno-sse -mno-sse2 -mno-mmx
 LDFLAGS      := -m elf_x86_64 -T linker.ld -nostdlib

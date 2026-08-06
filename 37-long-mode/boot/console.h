@@ -6,7 +6,7 @@ typedef unsigned short u16;
 typedef unsigned int u32;
 typedef unsigned long long u64;
 
-#define KERNEL_OFFSET 0xC0000000U
+#define KERNEL_OFFSET 0xFFFFFFFF80000000ULL
 
 enum {
     VGA_WIDTH = 80,

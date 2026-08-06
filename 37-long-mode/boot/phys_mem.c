@@ -40,7 +40,7 @@ static void range_mark_used(u32 first, u32 last)
     }
 }
 
-void phys_mem_init(u32 mmap_addr, u32 mmap_length, u32 kernel_end)
+void phys_mem_init(u64 mmap_addr, u32 mmap_length, u32 kernel_end)
 {
     u32 offset = 0U;
     u32 i;
@@ -52,7 +52,7 @@ void phys_mem_init(u32 mmap_addr, u32 mmap_length, u32 kernel_end)
 
     while (offset < mmap_length) {
         const struct mmap_entry *e =
-            (const struct mmap_entry *)(mmap_addr + offset);
+            (const struct mmap_entry *)(mmap_addr + (u64)offset);
 
         if (e->type == 1U && e->addr_high == 0U) {
             u32 start = (e->addr_low + PAGE_SIZE - 1U) & ~(PAGE_SIZE - 1U);
