@@ -16,15 +16,15 @@
 #define PROC_NO_PARENT   ((u32)-1U)
 
 typedef struct {
-    u64 rdi;
-    u64 rsi;
-    u64 rbp;
-    u64 rbx;
-    u64 rdx;
-    u64 rcx;
-    u64 rip;
-    u64 user_rsp;
-    u64 rflags;
+    u32 edi;
+    u32 esi;
+    u32 ebp;
+    u32 ebx;
+    u32 edx;
+    u32 ecx;
+    u32 eip;
+    u32 user_esp;
+    u32 eflags;
 } fork_resume_t;
 
 typedef struct {

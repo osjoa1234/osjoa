@@ -77,8 +77,6 @@ void kernel_main(u32 magic, u32 phys_mbi)
 
     interrupts_enable();
 
-    __asm__ volatile ("int3");
-
     {
         u32 t0 = timer_ticks();
         console_set_color(0x0EU);

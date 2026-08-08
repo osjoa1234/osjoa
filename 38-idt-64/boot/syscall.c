@@ -82,29 +82,29 @@ void syscall_dispatch(struct interrupt_frame *frame)
         break;
     case SYS_FORK: {
         fork_resume_t ctx;
-        ctx.rdi      = frame->rdi;
-        ctx.rsi      = frame->rsi;
-        ctx.rbp      = frame->rbp;
-        ctx.rbx      = frame->rbx;
-        ctx.rdx      = frame->rdx;
-        ctx.rcx      = frame->rcx;
-        ctx.rip      = frame->rip;
-        ctx.user_rsp = frame->user_rsp;
-        ctx.rflags   = frame->rflags;
+        ctx.edi      = (u32)frame->rdi;
+        ctx.esi      = (u32)frame->rsi;
+        ctx.ebp      = (u32)frame->rbp;
+        ctx.ebx      = (u32)frame->rbx;
+        ctx.edx      = (u32)frame->rdx;
+        ctx.ecx      = (u32)frame->rcx;
+        ctx.eip      = (u32)frame->rip;
+        ctx.user_esp = (u32)frame->user_rsp;
+        ctx.eflags   = (u32)frame->rflags;
         frame->rax   = proc_fork(&ctx);
         break;
     }
     case SYS_CLONE: {
         fork_resume_t ctx;
-        ctx.rdi      = frame->rdi;
-        ctx.rsi      = frame->rsi;
-        ctx.rbp      = frame->rbp;
-        ctx.rbx      = frame->rbx;
-        ctx.rdx      = frame->rdx;
-        ctx.rcx      = frame->rcx;
-        ctx.rip      = frame->rip;
-        ctx.user_rsp = frame->rbx;
-        ctx.rflags   = frame->rflags;
+        ctx.edi      = (u32)frame->rdi;
+        ctx.esi      = (u32)frame->rsi;
+        ctx.ebp      = (u32)frame->rbp;
+        ctx.ebx      = (u32)frame->rbx;
+        ctx.edx      = (u32)frame->rdx;
+        ctx.ecx      = (u32)frame->rcx;
+        ctx.eip      = (u32)frame->rip;
+        ctx.user_esp = (u32)frame->rbx;
+        ctx.eflags   = (u32)frame->rflags;
         frame->rax   = proc_clone(&ctx);
         break;
     }

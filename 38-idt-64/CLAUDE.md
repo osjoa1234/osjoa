@@ -43,9 +43,9 @@ struct interrupt_frame {
 
 `mov rdi, rsp; call interrupt_dispatch`로 이 구조체 포인터를 그대로 넘기므로, 필드 순서가 스택 레이아웃과 1:1로 맞아야 한다.
 
-### syscall.c / fork_resume_t 동반 수정
+### syscall.c 갱신 — fork_resume_t는 39로 유보
 
-프레임 필드명이 `eax→rax`, `ebx→rbx` 등으로 바뀌면서 `syscall.c`의 모든 `frame->e**` 접근을 `frame->r**`로 갱신했다. `SYS_FORK`/`SYS_CLONE`이 프레임 값을 그대로 옮겨 담는 `fork_resume_t`(`process.h`)도 폭을 맞춰 `u64` 9필드로 다시 정의했다 — 39에서 프로세스 코드를 포팅할 때 이 구조체를 또 뜯어고치지 않게 하기 위함이다. `process.c`의 `child->entry = (u32)ctx->rip;`처럼, `process_t.entry` 자체는 아직 32비트(ELF32 로더 기준)라 값 대입 시 다운캐스트가 필요한 지점만 캐스팅했다 — `process_t`/`paging`/`elf.c`의 진짜 64비트 포팅은 39의 몫이다.
+프레임 필드명이 `eax→rax`, `ebx→rbx` 등으로 바뀌면서 `syscall.c`의 모든 `frame->e**` 접근을 `frame->r**`로 갱신했다. `SYS_FORK`/`SYS_CLONE`이 프레임 값을 옮겨 담는 `fork_resume_t`(`process.h`)는 여전히 `u32` 8~9필드 그대로 두고, 대입부만 `(u32)frame->rdi`처럼 다운캐스트했다. `fork_resume_t`를 지금 `u64`로 넓혀도 `proc_init()`/`proc_spawn()`/`enter_user_mode_fork()`가 `kernel_main`에서 전혀 호출되지 않는 죽은 코드라 38의 동작에는 아무 영향이 없고, `process.c`/`paging.c`/`thread.c` 전체가 어차피 39에서 다시 짜여질 대상이라 지금 `fork_resume_t`만 먼저 넓히는 건 이 단계(IDT/인터럽트 프레임)의 범위를 벗어난 선반영이라고 판단했다 — `paging.c`가 지금도 옛 2-레벨 모델을 그대로 갖고 있는 것과 같은 성격으로, 39가 프로세스 계층을 통째로 포팅할 때 `fork_resume_t`도 같이 넓힌다.
 
 ### console_printf `%l` 길이 지정자 추가
 
@@ -53,11 +53,9 @@ struct interrupt_frame {
 
 ### 완료 기준에서 실제로 검증되는 것
 
-`kernel_main`에서 `interrupts_init()` → `timer_init(100)` → `keyboard_init()` → `interrupts_enable()` 순으로 켠 뒤:
+`kernel_main`에서 `interrupts_init()` → `timer_init(100)` → `keyboard_init()` → `interrupts_enable()` 순으로 켠 뒤, `timer_sleep(200)`으로 하드웨어 IRQ0 경로(벡터 0x20, PIC EOI, `pic_send_eoi`)를 200ms 동안 반복 태운다 — 15-pit-timer/36에서 쓰던 것과 같은 "sleep 전후 tick 비교" 방식이다. 100Hz에서 delta=20이 나오면 IRQ 파이프라인 전체(PIC 리맵→16바이트 IDT→ISR 스텁→새 `interrupt_frame`→`handle_irq`→EOI)가 새 구조 그대로 정확히 살아있다는 뜻이다.
 
-- `int3`을 직접 실행해 예외 경로(벡터<32, 소프트웨어 트랩)를 태운다 — `rip=0xFFFFFFFF80xxxxxx`가 정확히 찍히면 16바이트 게이트 + 새 프레임 struct가 맞다는 뜻.
-- `timer_sleep(200)`으로 하드웨어 IRQ0 경로(벡터 0x20, PIC EOI, `pic_send_eoi`)를 200ms 동안 반복 태운다 — 100Hz에서 delta=20이 나오면 IRQ 파이프라인 전체(PIC 리맵→IDT→ISR 스텁→dispatch→EOI)가 살아있다는 뜻.
-- `timer_irq()`가 부르는 `scheduler_tick()`은 `threads_init()`이 아직 호출되지 않아 `scheduler_ready=0`으로 즉시 리턴한다 — 스레드/프로세스 인프라 없이도 안전하게 IRQ0을 켤 수 있는 이유.
+`timer_irq()`가 부르는 `scheduler_tick()`은 `threads_init()`이 아직 호출되지 않아 `scheduler_ready=0`으로 즉시 리턴한다 — 스레드/프로세스 인프라 없이도 안전하게 IRQ0을 켤 수 있는 이유다.
 
 ### 이번 단계에서 미룬 것 — `syscall`/`sysret` MSR 진입
 
@@ -84,13 +82,12 @@ phys mem: 32553 free pages (127MB usable)
 IDT ready: 256 entries (16-byte gates) PIC=0x20/0x28 syscall=0x80(DPL=3)
 timer: PIT 100Hz IRQ0 ready
 keyboard ready: IRQ1 unmasked
-interrupt 0x03 Breakpoint err=0x00000000 rip=0xFFFFFFFF801059C2
 sleep 200ms: ticks before=1
 sleep done: ticks after=21 (delta=20)
 long mode: IDT-64 ready (processes in 39)
 ```
 
-(정확한 `rip` 값과 tick 수는 빌드마다 달라질 수 있다.)
+(정확한 tick 수는 빌드마다 달라질 수 있다.)
 
 ## 이전 단계(37) 대비 변경 파일
 
@@ -99,13 +96,12 @@ long mode: IDT-64 ready (processes in 39)
 | `boot/interrupts.h` | 수정 | `struct interrupt_frame`을 실제 push 순서(rdi,rsi,rbp,rbx,rdx,rcx,rax,vector,error_code,rip,cs,rflags,user_rsp,user_ss) 그대로 `u64` 필드로 재설계 |
 | `boot/interrupts.c` | 수정 | `idt_entry` 16바이트(ist/offset_mid/offset_high/reserved 추가); `idt_pointer.base` u64; `idt_set_entry(u8, u64, ...)`; `handle_exception`/`handle_irq`/`interrupt_dispatch`가 새 필드명 사용; rip/cr2를 `%016lX`로 출력 |
 | `boot/console.c` | 수정 | `console_write_unsigned64_padded` 추가; `console_vprintf`에 `%l` 길이 지정자(u64 인자) 지원 |
-| `boot/syscall.c` | 수정 | `frame->eax/ebx/ecx/edx/edi/esi/ebp/user_esp/eflags` → `frame->rax/rbx/rcx/rdx/rdi/rsi/rbp/user_rsp/rflags`; 정수 인자는 `(u32)` 다운캐스트, 포인터 인자는 64비트 그대로 캐스트 |
-| `boot/process.h` | 수정 | `fork_resume_t`를 `u64` 9필드(rdi/rsi/rbp/rbx/rdx/rcx/rip/user_rsp/rflags)로 재정의 |
-| `boot/process.c` | 수정 | `child->entry = (u32)ctx->rip;` — `process_t.entry`는 아직 32비트라 다운캐스트만 반영 |
-| `boot/kernel.c` | 수정 | `interrupts_init()`/`timer_init(100)`/`keyboard_init()`/`interrupts_enable()` 호출 추가; `int3` 예외 데모 + `timer_sleep(200)` IRQ0 데모; 준비 메시지를 "IDT-64 ready (processes in 39)"로 갱신 |
+| `boot/syscall.c` | 수정 | `frame->eax/ebx/ecx/edx/edi/esi/ebp/user_esp/eflags` → `frame->rax/rbx/rcx/rdx/rdi/rsi/rbp/user_rsp/rflags`; 정수 인자는 `(u32)` 다운캐스트, 포인터 인자는 64비트 그대로 캐스트; `SYS_FORK`/`SYS_CLONE`은 여전히 `u32` `fork_resume_t`에 `(u32)frame->r**`로 다운캐스트해서 채움(구조체 자체는 39까지 유보) |
+| `boot/kernel.c` | 수정 | `interrupts_init()`/`timer_init(100)`/`keyboard_init()`/`interrupts_enable()` 호출 추가; 15-pit-timer/36과 같은 `timer_sleep(200)` sleep-전후-tick 비교로 IRQ0 데모; 준비 메시지를 "IDT-64 ready (processes in 39)"로 갱신 |
 | `CLAUDE.md` | 신규 | 이 문서 |
 
 ## 다음 단계 힌트
 
 - `39-port-64`: process/thread/ELF/context_switch 64비트 포팅 완료 — 64비트 전환 3/3. 부모 `CLAUDE.md`의 39 항목에 이미 상세 힌트(`paging.c` 전체 재작성, `thread.h`/`thread.c` u64 전환, `kheap.h` 주소 재배치, ELF64, 유저 빌드 64비트화)가 정리되어 있다.
+- **`process.h`의 `fork_resume_t`가 여전히 `u32` 8필드다.** `syscall.c`의 `SYS_FORK`/`SYS_CLONE`이 (38에서 새로 짠) `u64` `interrupt_frame`에서 값을 `(u32)`로 다운캐스트해서 채우는 중인데, 이건 지금은 죽은 코드(`proc_init`/`proc_spawn` 미호출)라 문제가 없지만 39에서 프로세스를 실제로 띄우는 순간 canonical 상위 주소(`rip`/`user_rsp`)가 32비트로 잘려나가는 진짜 버그가 된다. `process.c`/`paging.c`를 포팅할 때 `fork_resume_t`도 `u64` 9필드로 같이 넓힐 것.
 - 39에서 유저 모드가 실제로 살아나면, 이 단계에서 미뤄둔 `syscall`/`sysret` MSR 경로(GDT 유저 세그먼트 순서 재배치 + `STAR`/`LSTAR`/`SFMASK` 설정 + 엔트리 스텁)를 `int 0x80` 경로와 나란히 구현하는 것을 고려할 것.

@@ -133,7 +133,7 @@ u32 proc_fork(const fork_resume_t *ctx)
     paging_copy_user_pages(parent->pd_phys, child_pd);
 
     child->fork_ctx   = *ctx;
-    child->entry      = (u32)ctx->rip;
+    child->entry      = ctx->eip;
     child->pd_phys    = child_pd;
     child->parent_pid = parent->pid;
 
