@@ -82,7 +82,7 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 35 | `35-user-shell` | 사용자 모드 셸과 기본 명령 실행 |
 | 36 | `36-linux-abi` | syscall 번호를 Linux i386 ABI에 맞게 정렬 (`write=4`, `fork=2`, `execve=11` 등) |
 | 37 | `37-long-mode` | PAE + long mode 진입, 4-level 페이지 테이블, 64비트 GDT/TSS — 커널 64비트 전환 1/3 |
-| 38 | `38-idt-64` | 64비트 IDT 재구성, `syscall` MSR 기반 시스템 콜 진입 — 64비트 전환 2/3 |
+| 38 | `38-idt-64` | 64비트 IDT 재구성(16바이트 게이트), 인터럽트 프레임 u64 재설계 — 64비트 전환 2/3 (`syscall` MSR 진입은 39 유저모드 복원 때로 미룸) |
 | 39 | `39-port-64` | process/thread/ELF/context_switch 64비트 포팅 완료 — 64비트 전환 3/3 |
 | 40 | `40-brk` | `process_t`에 heap_end 추가, `sys_brk(45)` 구현 — musl malloc 전제조건 |
 | 41 | `41-tls` | `arch_prctl(172)` ARCH_SET_FS, FS.base MSR 설정, `getpid`/`getuid`/`uname` stub |
