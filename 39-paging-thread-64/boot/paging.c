@@ -8,7 +8,7 @@ extern u64 boot_pml4[512];
 #define PTE_US 0x004ULL
 #define ADDR_MASK 0x000FFFFFFFFFF000ULL
 
-static u64 kernel_pd_phys;
+static u64 kernel_pml4_phys;
 static u32 mapped_mb;
 
 struct e820_entry {
@@ -93,7 +93,7 @@ void paging_init(u64 mmap_vaddr, u32 mmap_length)
 
     mapped_mb = (max_addr + 0xFFFFFU) >> 20U;
 
-    kernel_pd_phys = (u64)phys_of(boot_pml4);
+    kernel_pml4_phys = (u64)phys_of(boot_pml4);
 }
 
 u32 paging_mapped_mb(void)
@@ -103,7 +103,7 @@ u32 paging_mapped_mb(void)
 
 void page_map_frame(u64 vaddr, u32 paddr)
 {
-    u64 *pml4 = tbl(kernel_pd_phys);
+    u64 *pml4 = tbl(kernel_pml4_phys);
     u64 *pt   = walk_pt(pml4, vaddr, 0, 1);
     u32  pt_i = (u32)((vaddr >> 12) & 0x1FFULL);
 
@@ -113,30 +113,30 @@ void page_map_frame(u64 vaddr, u32 paddr)
 
 u32 paging_clone_dir(void)
 {
-    u32  pd_phys   = page_alloc();
-    u64 *new_pml4  = tbl(pd_phys);
-    u64 *kpml4     = tbl(kernel_pd_phys);
+    u32  pml4_phys = page_alloc();
+    u64 *new_pml4  = tbl(pml4_phys);
+    u64 *kpml4     = tbl(kernel_pml4_phys);
     u32  i;
 
     for (i = 0U; i < 512U; i++) new_pml4[i] = 0U;
     new_pml4[511] = kpml4[511];
 
-    return pd_phys;
+    return pml4_phys;
 }
 
-void paging_set_dir(u32 pd_phys)
+void paging_set_dir(u32 pml4_phys)
 {
-    __asm__ volatile ("mov %0, %%cr3" : : "r"((u64)pd_phys));
+    __asm__ volatile ("mov %0, %%cr3" : : "r"((u64)pml4_phys));
 }
 
 void paging_restore_kernel_dir(void)
 {
-    __asm__ volatile ("mov %0, %%cr3" : : "r"(kernel_pd_phys));
+    __asm__ volatile ("mov %0, %%cr3" : : "r"(kernel_pml4_phys));
 }
 
-void paging_map_user_page(u32 pd_phys, u64 vaddr, u32 paddr)
+void paging_map_user_page(u32 pml4_phys, u64 vaddr, u32 paddr)
 {
-    u64 *pml4 = tbl(pd_phys);
+    u64 *pml4 = tbl(pml4_phys);
     u64 *pt   = walk_pt(pml4, vaddr, 1, 1);
     u32  pt_i = (u32)((vaddr >> 12) & 0x1FFULL);
 
@@ -144,9 +144,9 @@ void paging_map_user_page(u32 pd_phys, u64 vaddr, u32 paddr)
     flush_tlb();
 }
 
-void paging_free_user_pages(u32 pd_phys)
+void paging_free_user_pages(u32 pml4_phys)
 {
-    u64 *pml4 = tbl(pd_phys);
+    u64 *pml4 = tbl(pml4_phys);
     u32  i4;
 
     for (i4 = 0U; i4 < 511U; i4++) {
@@ -192,10 +192,10 @@ void paging_free_user_pages(u32 pd_phys)
     flush_tlb();
 }
 
-void paging_copy_user_pages(u32 src_pd_phys, u32 dst_pd_phys)
+void paging_copy_user_pages(u32 src_pml4_phys, u32 dst_pml4_phys)
 {
-    u64 *src_pml4 = tbl(src_pd_phys);
-    u64 *dst_pml4 = tbl(dst_pd_phys);
+    u64 *src_pml4 = tbl(src_pml4_phys);
+    u64 *dst_pml4 = tbl(dst_pml4_phys);
     u32  i4;
 
     for (i4 = 0U; i4 < 511U; i4++) {

@@ -127,8 +127,8 @@ long mode: paging+kheap+thread port complete (usermode in 40)
 | 파일 | 상태 | 설명 |
 |------|------|------|
 | `boot/entry.asm` | 수정 | `boot_pml4`에 `global` 추가 — C에서 물리주소를 얻어 재사용 |
-| `boot/paging.h` | 수정 | `paging_init`이 `u64 mmap_addr`를 받도록, `page_map_frame`/`paging_map_user_page`가 `u64 vaddr`를 받도록 시그니처 변경 |
-| `boot/paging.c` | 전면 재작성 | 2-레벨 32비트 `page_directory`/`page_tables` 폐기, `boot_pml4` 기반 4단계 워커(`next_level`/`walk_pt`)로 clone/map/free/copy 재구현 |
+| `boot/paging.h` | 수정 | `paging_init`이 `u64 mmap_addr`를 받도록, `page_map_frame`/`paging_map_user_page`가 `u64 vaddr`를 받도록 시그니처 변경; `pd_phys`→`pml4_phys`로 개명(4단계 전환 후 실제로 가리키는 게 PML4임을 이름에 반영) |
+| `boot/paging.c` | 전면 재작성 | 2-레벨 32비트 `page_directory`/`page_tables` 폐기, `boot_pml4` 기반 4단계 워커(`next_level`/`walk_pt`)로 clone/map/free/copy 재구현; `kernel_pd_phys`/`pd_phys` 계열 변수명도 `pml4_phys` 계열로 개명 |
 | `boot/kheap.h` | 수정 | `KHEAP_START`/`KHEAP_MAX`를 `0xFFFFFFFFC04/800000` canonical 주소로 재배치 |
 | `boot/kheap.c` | 수정 | `heap_top`을 `u64`로 |
 | `boot/thread.h` | 수정 | `esp`→`rsp`(u64), `kstack_top`을 u64로, `threads_init` 매개변수 u64 |
