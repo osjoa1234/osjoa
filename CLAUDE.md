@@ -83,18 +83,19 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 36 | `36-linux-abi` | syscall 번호를 Linux i386 ABI에 맞게 정렬 (`write=4`, `fork=2`, `execve=11` 등) |
 | 37 | `37-long-mode` | PAE + long mode 진입, 4-level 페이지 테이블, 64비트 GDT/TSS — 커널 64비트 전환 1/3 |
 | 38 | `38-idt-64` | 64비트 IDT 재구성(16바이트 게이트), 인터럽트 프레임 u64 재설계 — 64비트 전환 2/3 (`syscall` MSR 진입은 39 유저모드 복원 때로 미룸) |
-| 39 | `39-port-64` | process/thread/ELF/context_switch 64비트 포팅 완료 — 64비트 전환 3/3 |
-| 40 | `40-brk` | `process_t`에 heap_end 추가, `sys_brk(45)` 구현 — musl malloc 전제조건 |
-| 41 | `41-tls` | `arch_prctl(172)` ARCH_SET_FS, FS.base MSR 설정, `getpid`/`getuid`/`uname` stub |
-| 42 | `42-musl-hello` | musl-static으로 빌드한 첫 외부 바이너리를 initrd에 넣어 실행 검증 |
-| 43 | `43-mmap` | 익명 `mmap2(192)` + `mprotect`/`fstat` stub — busybox 단순 유틸(`cat`, `echo`) 실행 |
-| 44 | `44-signal` | per-process 시그널 핸들러 테이블, 유저 공간 트램폴린 + `sigreturn`, Ctrl+C→SIGINT |
-| 45 | `45-pipe` | `pipe(42)`, `dup2(63)` — 셸 파이프(`\|`)와 리다이렉션(`>`) |
-| 46 | `46-busybox-sh` | `chdir`, `access`, ioctl stub 추가 — busybox sh를 initrd에서 실행 |
-| 47 | `47-disk-fs` | ATA PIO 디스크 읽기, FAT16/ext2 마운트, VFS 디스크 백엔드 연결 |
-| 48 | `48-vfs-ext` | `getdents`, `mkdir`, `unlink` — `ls`/`rm`이 실제 디스크 FS에서 동작 |
+| 39 | `39-paging-thread-64` | paging(4단계 PML4/PDPT/PD/PT)+kheap 재배치+thread/context_switch 64비트 포팅 — 커널 쓰레드만, 유저모드 없음 — 64비트 전환 3/4 |
+| 40 | `40-usermode-64` | gdt `iretq` 링3 진입 + ELF64 + process/syscall 포팅 + initrd u64 — `proc_spawn("init")`으로 유저 셸 부팅 — 64비트 전환 4/4 |
+| 41 | `41-brk` | `process_t`에 heap_end 추가, `sys_brk(45)` 구현 — musl malloc 전제조건 |
+| 42 | `42-tls` | `arch_prctl(172)` ARCH_SET_FS, FS.base MSR 설정, `getpid`/`getuid`/`uname` stub |
+| 43 | `43-musl-hello` | musl-static으로 빌드한 첫 외부 바이너리를 initrd에 넣어 실행 검증 |
+| 44 | `44-mmap` | 익명 `mmap2(192)` + `mprotect`/`fstat` stub — busybox 단순 유틸(`cat`, `echo`) 실행 |
+| 45 | `45-signal` | per-process 시그널 핸들러 테이블, 유저 공간 트램폴린 + `sigreturn`, Ctrl+C→SIGINT |
+| 46 | `46-pipe` | `pipe(42)`, `dup2(63)` — 셸 파이프(`\|`)와 리다이렉션(`>`) |
+| 47 | `47-busybox-sh` | `chdir`, `access`, ioctl stub 추가 — busybox sh를 initrd에서 실행 |
+| 48 | `48-disk-fs` | ATA PIO 디스크 읽기, FAT16/ext2 마운트, VFS 디스크 백엔드 연결 |
+| 49 | `49-vfs-ext` | `getdents`, `mkdir`, `unlink` — `ls`/`rm`이 실제 디스크 FS에서 동작 |
 
-12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → Linux ABI 호환 → **37~39에서 64비트 전환** → 외부 바이너리 실행 순서로 기반을 쌓는다.
+12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → Linux ABI 호환 → **37~40에서 64비트 전환** → 외부 바이너리 실행 순서로 기반을 쌓는다.
 
 순서·이름은 진행 중 자유롭게 조정 가능.
 

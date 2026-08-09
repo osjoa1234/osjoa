@@ -45,7 +45,7 @@ struct interrupt_frame {
 
 ### syscall.c 갱신 — fork_resume_t는 39로 유보
 
-프레임 필드명이 `eax→rax`, `ebx→rbx` 등으로 바뀌면서 `syscall.c`의 모든 `frame->e**` 접근을 `frame->r**`로 갱신했다. `SYS_FORK`/`SYS_CLONE`이 프레임 값을 옮겨 담는 `fork_resume_t`(`process.h`)는 여전히 `u32` 8~9필드 그대로 두고, 대입부만 `(u32)frame->rdi`처럼 다운캐스트했다. `fork_resume_t`를 지금 `u64`로 넓혀도 `proc_init()`/`proc_spawn()`/`enter_user_mode_fork()`가 `kernel_main`에서 전혀 호출되지 않는 죽은 코드라 38의 동작에는 아무 영향이 없고, `process.c`/`paging.c`/`thread.c` 전체가 어차피 39에서 다시 짜여질 대상이라 지금 `fork_resume_t`만 먼저 넓히는 건 이 단계(IDT/인터럽트 프레임)의 범위를 벗어난 선반영이라고 판단했다 — `paging.c`가 지금도 옛 2-레벨 모델을 그대로 갖고 있는 것과 같은 성격으로, 39가 프로세스 계층을 통째로 포팅할 때 `fork_resume_t`도 같이 넓힌다.
+프레임 필드명이 `eax→rax`, `ebx→rbx` 등으로 바뀌면서 `syscall.c`의 모든 `frame->e**` 접근을 `frame->r**`로 갱신했다. `SYS_FORK`/`SYS_CLONE`이 프레임 값을 옮겨 담는 `fork_resume_t`(`process.h`)는 여전히 `u32` 8~9필드 그대로 두고, 대입부만 `(u32)frame->rdi`처럼 다운캐스트했다. `fork_resume_t`를 지금 `u64`로 넓혀도 `proc_init()`/`proc_spawn()`/`enter_user_mode_fork()`가 `kernel_main`에서 전혀 호출되지 않는 죽은 코드라 38의 동작에는 아무 영향이 없고, `process.c`/`paging.c`/`thread.c` 전체가 어차피 39~40에서 다시 짜여질 대상이라 지금 `fork_resume_t`만 먼저 넓히는 건 이 단계(IDT/인터럽트 프레임)의 범위를 벗어난 선반영이라고 판단했다 — `paging.c`가 지금도 옛 2-레벨 모델을 그대로 갖고 있는 것과 같은 성격으로, `process.c`/`syscall.c`를 실제로 포팅하는 40에서 `fork_resume_t`도 같이 넓힌다.
 
 ### console_printf `%l` 길이 지정자 추가
 
@@ -59,7 +59,7 @@ struct interrupt_frame {
 
 ### 이번 단계에서 미룬 것 — `syscall`/`sysret` MSR 진입
 
-상위 로드맵에 `syscall MSR 기반 시스템 콜 진입`이 38 설명에 같이 적혀 있었지만, 실제로 이 경로를 검증하려면 `sysretq`가 강제로 CPL3로 복귀하는데 아직 유저 접근 가능 페이지·GDT의 유저 세그먼트 순서(`SYSRET`는 `STAR[63:48]+8`=SS, `+16`=CS를 요구하므로 현재 GDT의 ucode64(0x18)/udata(0x20) 순서를 뒤집어야 함)·실제 ring 3 대상이 전혀 준비되어 있지 않다. `enter_user_mode`가 37부터 이미 `ret`뿐인 스텁인 것과 같은 이유로, 이 부분은 39에서 프로세스/유저모드가 실제로 살아날 때 GDT 유저 세그먼트 재배치와 함께 구현하는 편이 안전하다고 판단해 미뤘다. 지금 `int 0x80` 게이트(DPL=3, 16바이트)는 이미 정상 동작하므로 39에서 실제 유저 프로세스가 뜨면 이 경로부터 먼저 검증한다.
+상위 로드맵에 `syscall MSR 기반 시스템 콜 진입`이 38 설명에 같이 적혀 있었지만, 실제로 이 경로를 검증하려면 `sysretq`가 강제로 CPL3로 복귀하는데 아직 유저 접근 가능 페이지·GDT의 유저 세그먼트 순서(`SYSRET`는 `STAR[63:48]+8`=SS, `+16`=CS를 요구하므로 현재 GDT의 ucode64(0x18)/udata(0x20) 순서를 뒤집어야 함)·실제 ring 3 대상이 전혀 준비되어 있지 않다. `enter_user_mode`가 37부터 이미 `ret`뿐인 스텁인 것과 같은 이유로, 이 부분은 40에서 프로세스/유저모드가 실제로 살아날 때 GDT 유저 세그먼트 재배치와 함께 구현하는 편이 안전하다고 판단해 미뤘다. 지금 `int 0x80` 게이트(DPL=3, 16바이트)는 이미 정상 동작하므로 40에서 실제 유저 프로세스가 뜨면 이 경로부터 먼저 검증한다.
 
 ## 명령
 
@@ -102,6 +102,7 @@ long mode: IDT-64 ready (processes in 39)
 
 ## 다음 단계 힌트
 
-- `39-port-64`: process/thread/ELF/context_switch 64비트 포팅 완료 — 64비트 전환 3/3. 부모 `CLAUDE.md`의 39 항목에 이미 상세 힌트(`paging.c` 전체 재작성, `thread.h`/`thread.c` u64 전환, `kheap.h` 주소 재배치, ELF64, 유저 빌드 64비트화)가 정리되어 있다.
-- **`process.h`의 `fork_resume_t`가 여전히 `u32` 8필드다.** `syscall.c`의 `SYS_FORK`/`SYS_CLONE`이 (38에서 새로 짠) `u64` `interrupt_frame`에서 값을 `(u32)`로 다운캐스트해서 채우는 중인데, 이건 지금은 죽은 코드(`proc_init`/`proc_spawn` 미호출)라 문제가 없지만 39에서 프로세스를 실제로 띄우는 순간 canonical 상위 주소(`rip`/`user_rsp`)가 32비트로 잘려나가는 진짜 버그가 된다. `process.c`/`paging.c`를 포팅할 때 `fork_resume_t`도 `u64` 9필드로 같이 넓힐 것.
-- 39에서 유저 모드가 실제로 살아나면, 이 단계에서 미뤄둔 `syscall`/`sysret` MSR 경로(GDT 유저 세그먼트 순서 재배치 + `STAR`/`LSTAR`/`SFMASK` 설정 + 엔트리 스텁)를 `int 0x80` 경로와 나란히 구현하는 것을 고려할 것.
+- `39-paging-thread-64`: `paging.c` 전체 재작성(4단계 PML4/PDPT/PD/PT), `kheap.h` 주소 재배치, `thread.h`/`thread.c` u64 전환 — 커널 쓰레드만으로 검증하고 유저모드는 아직 건드리지 않는다(64비트 전환 3/4). `process.c`/`elf.c`/`syscall.c`/`initrd.c`/`gdt.asm`은 39에서 그대로 둔다(여전히 32비트 타입, 여전히 죽은 코드).
+- `40-usermode-64`: 39 위에서 ELF64, `process.c`/`syscall.c` 포팅, `gdt.asm`의 `enter_user_mode`/`enter_user_mode_fork` 실제 구현까지 마쳐 `proc_spawn("init")`이 실제로 셸을 띄운다(64비트 전환 4/4).
+- **`process.h`의 `fork_resume_t`가 여전히 `u32` 8필드다.** `syscall.c`의 `SYS_FORK`/`SYS_CLONE`이 (38에서 새로 짠) `u64` `interrupt_frame`에서 값을 `(u32)`로 다운캐스트해서 채우는 중인데, 이건 지금은 죽은 코드(`proc_init`/`proc_spawn` 미호출)라 문제가 없지만 40에서 프로세스를 실제로 띄우는 순간 canonical 상위 주소(`rip`/`user_rsp`)가 32비트로 잘려나가는 진짜 버그가 된다. `process.c`/`syscall.c`를 포팅할 때 `fork_resume_t`도 `u64` 9필드로 같이 넓힐 것.
+- 40에서 유저 모드가 실제로 살아나면, 이 단계에서 미뤄둔 `syscall`/`sysret` MSR 경로(GDT 유저 세그먼트 순서 재배치 + `STAR`/`LSTAR`/`SFMASK` 설정 + 엔트리 스텁)를 `int 0x80` 경로와 나란히 구현하는 것을 고려할 것.
