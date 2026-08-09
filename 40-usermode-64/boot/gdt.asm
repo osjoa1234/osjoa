@@ -37,34 +37,53 @@ enter_user_mode:
     push qword 0x202
     push qword 0x1B
     push rdi
+
+    xor rax, rax
+    xor rbx, rbx
+    xor rcx, rcx
+    xor rdx, rdx
+    xor rsi, rsi
+    xor rdi, rdi
+    xor rbp, rbp
+    xor r8,  r8
+    xor r9,  r9
+    xor r10, r10
+    xor r11, r11
+    xor r12, r12
+    xor r13, r13
+    xor r14, r14
+    xor r15, r15
+
     iretq
 
 enter_user_mode_fork:
-    mov r11, rdi
-
     mov rax, 0x23
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
 
-    mov r8,  [r11 + 48]
-    mov r9,  [r11 + 56]
-    mov r10, [r11 + 64]
-
     push qword 0x23
-    push r9
-    push r10
+    push qword [rdi + 120]
+    push qword [rdi + 128]
     push qword 0x1B
-    push r8
+    push qword [rdi + 112]
 
-    mov rdi, [r11 + 0]
-    mov rsi, [r11 + 8]
-    mov rbp, [r11 + 16]
-    mov rbx, [r11 + 24]
-    mov rdx, [r11 + 32]
-    mov rcx, [r11 + 40]
+    mov rsi, [rdi + 8]
+    mov rbp, [rdi + 16]
+    mov rbx, [rdi + 24]
+    mov rdx, [rdi + 32]
+    mov rcx, [rdi + 40]
+    mov r8,  [rdi + 48]
+    mov r9,  [rdi + 56]
+    mov r10, [rdi + 64]
+    mov r11, [rdi + 72]
+    mov r12, [rdi + 80]
+    mov r13, [rdi + 88]
+    mov r14, [rdi + 96]
+    mov r15, [rdi + 104]
     xor rax, rax
+    mov rdi, [rdi + 0]
 
     iretq
 

@@ -10,7 +10,7 @@
 static process_t    proc_table[PROC_MAX];
 static wait_queue_t kernel_wait_chldexit;
 
-extern void enter_user_mode(u64 eip, u64 esp);
+extern void enter_user_mode(u64 rip, u64 user_rsp);
 extern void enter_user_mode_fork(const fork_resume_t *ctx);
 
 void proc_init(void)
