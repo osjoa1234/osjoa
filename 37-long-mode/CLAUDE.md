@@ -64,6 +64,58 @@ retfq                  ; CS:RIP far return
 
 GCC `-O2`는 정적 배열 초기화에 SSE `movaps`/`movdqa` 명령어를 생성한다. `movaps`는 **16바이트 정렬**을 요구하는데, 커널 정적 배열은 기본적으로 8바이트 정렬이므로 `#GP` fault로 triple fault가 발생한다. 커널 CFLAGS에 이 세 플래그를 추가하면 SSE 코드 생성이 억제된다.
 
+### `interrupt_common` — `pushad`의 원칙을 64비트 레지스터 전부로 확장
+
+36까지 `interrupt_common`은 `pushad`/`popad` 한 쌍으로 그 순간 CPU가 가진 GPR 전부(8개)를 저장/복원했다. x86-64엔 `pushad`/`popad`에 대응하는 명령어가 없어(인코딩 자체가 제거됨) 레지스터를 손으로 나열해야 하는데, `pushad`가 원래 지키던 원칙 — "인터럽트가 걸리는 순간 CPU가 가진 GPR을 전부 저장한다" — 을 64비트로 그대로 옮기면 8개가 아니라 16개(`rax,rcx,rdx,rbx,rbp,rsi,rdi` + 64비트에서 새로 생긴 `r8`~`r15`; `rsp`는 예나 지금이나 하드웨어 iret 프레임이 따로 처리)를 전부 나열해야 한다는 뜻이다. 인터럽트는 함수 호출이 아니라 비동기 진입이라 "지금 안 쓰는 레지스터는 생략해도 된다"는 판단이 성립하지 않는다 — 인터럽트당하는 쪽은 자신이 어떤 레지스터에 값을 들고 있는지 CPU에 미리 알릴 방법이 없다.
+
+```asm
+interrupt_common:
+    push rax
+    push rcx
+    push rdx
+    push rbx
+    push rbp
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
+    mov rdi, rsp
+    call interrupt_dispatch
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rbp
+    pop rbx
+    pop rdx
+    pop rcx
+    pop rax
+    add rsp, 16
+    iretq
+```
+
+이 단계에서는 `kernel_main`이 `interrupts_init()`을 아직 호출하지 않아 이 코드가 한 번도 실행되지 않고, `interrupts.h`의 `struct interrupt_frame`도 여전히 32비트 시절 `u32` 필드라 이 push 순서와 전혀 안 맞는다 — 인터럽트 프레임을 "실제로 쓸 수 있는 상태"로 만드는 일(구조체를 이 push 순서에 맞춰 재설계, IDT 게이트 16바이트화)은 여전히 38의 몫이다. 여기서 확정하는 건 오직 "레지스터를 몇 개, 어떤 순서로 저장/복원하는가"뿐이다.
+
+레지스터 목록을 정하면서 같이 검토했지만 적용하지 않은 것 세 가지가 있다:
+
+- **`cld`.** 인터럽트 핸들러는 자신이 어떤 컨텍스트(DF=1일 수도 있는 상태)에서 왔는지 알 수 없으므로, 진입할 때마다 방향 플래그를 클리어해두면 이후 실행되는 C 코드가 혹시라도 `rep movs/stos` 같은 문자열 명령어(메모리 복사/채우기, `memcpy`/`memset`류가 컴파일되면 나올 수 있는 것 — 화면에 텍스트를 찍는 것과는 무관하다)를 내보내도 항상 정방향으로 동작한다는 보장이 생긴다. 36(32비트)의 `interrupt_common`을 확인해보면 **32비트 때도 이건 하지 않았다** — `pushad`/`popad` 사이에 `cld`가 없었다. 지금 이 커널은 `-fno-builtin`에 단순 루프 위주라 컴파일러가 문자열 명령어를 낼 일이 거의 없어서 관찰 가능한 효과가 없는 순수 방어적 코드라 넣지 않았다.
+- **`ds`/`es`/`fs`/`gs` 저장·커널 셀렉터 전환·복원.** 유저 모드에서 인터럽트가 걸리면 이 세그먼트 레지스터는 유저 셀렉터 값을 그대로 유지한 채 커널 C 코드가 실행된다. GPR과 같은 원칙(인터럽트 이전 컨텍스트를 있는 그대로 보존)을 적용하면 이것도 저장/복원해야 할 것 같지만, 36의 `interrupt_common`을 확인해보면 **32비트 때도 인터럽트 핸들러는 세그먼트 레지스터를 전혀 건드리지 않았다** — `mov ds/es/fs/gs`는 전부 `gdt.asm`의 부팅 시 GDT 로드와 최초 유저모드 진입 스텁에만 있었다. 롱 모드/보호모드 둘 다 데이터 세그먼트가 플랫 모델(`base=0`)이라 DS/ES/FS 값이 무엇이든 메모리 접근에는 실질적 영향이 없어서, 32비트도 64비트도 굳이 챙길 필요가 없었다. 42(TLS/`arch_prctl`)에서 FS.base(MSR, 셀렉터와는 별개 축)를 실제로 쓰기 시작하면 이 축은 그때 다시 볼 것.
+- **커널 스택(TSS.RSP0) 16바이트 정렬.** `kmalloc`이 4바이트 단위로만 반올림하므로(39에서 도입되는 `kheap.c`) 스레드별 커널 스택 꼭대기가 16바이트 정렬이라는 보장이 없고, SysV ABI는 `call` 직전 `rsp%16==0`을 요구한다. 하지만 이 정렬이 깨져서 실제로 폴트가 나는 경우는 SSE 명령어(`movaps`/`movdqa`)뿐이고, 이 커널은 `-mno-sse -mno-sse2 -mno-mmx`로 SSE 자체를 꺼뒀다 — 즉 GCC가 그런 명령어를 애초에 생성하지 않으므로 정렬 여부가 어떤 관찰 가능한 실행 결과에도 영향을 주지 않는다. SSE를 켜는 단계가 생기면 이 항목을 다시 꺼내볼 것.
+
+세 가지 다 32비트 시절에도 없던 항목이거나(`ds/es/fs/gs`, `cld`) 지금 이 코드베이스 어디에도 관찰 가능한 영향이 없는(정렬) 순수 방어적 변경이라, 결국 37에서 실제로 남긴 건 `pushad` 원칙을 64비트 레지스터 전부(`r8`~`r15` 포함)로 확장한 것뿐이다.
+
 ### BSS alignb vs align (NASM)
 
 NASM `.bss` 섹션에서는 `align`이 아닌 `alignb`를 써야 한다. `align`은 패딩 바이트를 0으로 초기화하려 해서 "attempt to initialize memory in BSS section" 경고가 발생한다.
@@ -102,7 +154,7 @@ long mode: kernel ready (IDT/processes in 38/39)
 | `boot/phys_mem.c` | 수정 | phys_mem_init 시그니처 u64; 포인터 캐스트 u64 offset 적용 |
 | `boot/kernel.c` | 수정 | kend_phys 연산 (u32)((u64)kernel_end - KERNEL_OFFSET) 수정; kernel_main 단순화 |
 | `boot/context_switch.asm` | 수정 | BITS 64; AMD64 ABI; 칼리-세이브 레지스터 저장/복원; stub (39에서 실제 사용) |
-| `boot/interrupts.asm` | 수정 | BITS 64; push qword; iretq; 테이블 엔트리 dq로 변경 |
+| `boot/interrupts.asm` | 수정 | BITS 64; push qword; iretq; 테이블 엔트리 dq로 변경; `interrupt_common`이 `pushad`의 "GPR 전부 저장" 원칙을 64비트 레지스터 전부(`rax/rcx/rdx/rbx/rbp/rsi/rdi/r8`~`r15`, 16개)로 확장 |
 | `boot/interrupts.c` | 수정 | read_cr2()의 cr2 변수를 u64로 변경 |
 | `boot/paging.c` | 수정 | flush_tlb/paging_init 등 CR3 관련 u64 캐스트 |
 | `linker.ld` | 수정 | KERNEL_OFFSET = 0xFFFFFFFF80000000 (canonical upper half) |
@@ -117,7 +169,7 @@ long mode: kernel ready (IDT/processes in 38/39)
 
 37은 `interrupts.asm`/`context_switch.asm`을 `BITS 64`로만 바꿔서 빌드가 되게 해뒀을 뿐, 인터럽트 프레임 설계 자체는 아직 32비트 시절 그대로다. `kernel_main`이 인터럽트를 켜지 않아 지금은 조용하지만, 38에서 IDT를 살리는 순간 바로 드러난다.
 
-- `interrupts.h`의 `struct interrupt_frame`이 전부 `u32`다. 그런데 `interrupts.asm`의 `interrupt_common`은 `push rax/rcx/rdx/rbx/rbp/rsi/rdi` — 전부 8바이트 push고, 개수도 옛날 `pusha`(8개, esp 포함)보다 하나 적다(7개, esp 없음). 필드 폭(4바이트 vs 8바이트)과 순서가 둘 다 어긋나 있어서, 지금 그대로 인터럽트를 걸면 `frame->vector`가 실제로는 `rdx`의 하위 4바이트를 읽는 식으로 완전히 엉뚱한 값이 나온다. 게이트를 16바이트로 바꾸는 이 단계에서 프레임 struct도 실제 push 순서(rdi,rsi,rbp,rbx,rdx,rcx,rax,vector,error_code,hw-iret 5개: rip,cs,rflags,rsp,ss)에 맞춰 `u64` 필드로 다시 설계해야 한다.
+- `interrupts.h`의 `struct interrupt_frame`이 전부 `u32`다. 그런데 `interrupts.asm`의 `interrupt_common`은 `rax/rcx/rdx/rbx/rbp/rsi/rdi/r8`~`r15`(16개, 전부 8바이트 push — `rsp`는 하드웨어 iret 프레임이 따로 처리)를 저장한다. 필드 폭(4바이트 vs 8바이트)도 순서도 개수도 다 어긋나 있어서, 지금 그대로 인터럽트를 걸면 `frame->vector`가 실제로는 엉뚱한 레지스터의 하위 4바이트를 읽는 식으로 완전히 틀린 값이 나온다. 게이트를 16바이트로 바꾸는 이 단계에서 프레임 struct를 실제 push 순서(`r15,r14,...,r8,rdi,rsi,rbp,rbx,rdx,rcx,rax,vector,error_code`, hw-iret 5개: `rip,cs,rflags,rsp,ss`)에 맞춰 `u64` 필드로 다시 설계해야 한다 — 레지스터를 몇 개·어떤 순서로 저장하는지는 37에서 이미 확정했으니, 38에서는 구조체를 거기에 맞추고 IDT 게이트를 16바이트로 넓히기만 하면 된다.
 - `interrupts.c`의 `struct idt_entry`(8바이트)와 `idt_set_entry(u8, u32 handler, ...)`도 옛날 32비트 게이트 포맷이다. 핸들러 주소가 이제 canonical 상위 주소(`0xFFFFFFFF80xxxxxx`)라 `u32`로 받으면 그대로 잘린다. 16바이트 게이트 + `u64` 핸들러로 교체.
 - `syscall.c`의 `frame->eax/ebx/ecx/edx/edi/esi/ebp/user_esp/eflags` 접근부는 프레임 struct가 바뀌면 자동으로 같이 갱신해야 한다.
 - **39와의 접점**: `process.c`의 `fork_resume_t`(`process.h`, 현재 `u32` 8개 필드)는 이 인터럽트 프레임에서 값을 그대로 옮겨 채운다(`syscall.c`의 `SYS_FORK`/`SYS_CLONE` 케이스). 프레임을 `u64`로 새로 설계할 때 `fork_resume_t`의 폭도 같이 맞춰서 39에서 또 뜯어고치는 일이 없게 할 것.

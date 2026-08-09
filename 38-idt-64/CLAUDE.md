@@ -28,12 +28,14 @@ struct idt_entry {
 
 ### 인터럽트 프레임 재설계 — 실제 push 순서에 맞추기
 
-`interrupts.asm`의 `interrupt_common`은 이미 37에서 `push rax/rcx/rdx/rbx/rbp/rsi/rdi`(전부 8바이트, 7개, `esp` 없음)로 짜여 있었다. 문제는 `interrupts.h`의 `struct interrupt_frame`이 옛날 32비트 `pusha` 순서(edi,esi,ebp,**esp**,ebx,edx,ecx,eax — 8개)를 그대로 `u32`로 갖고 있었다는 것 — 필드 폭과 순서가 둘 다 어긋나 있어 `frame->vector`가 실제로는 `rdx`의 하위 4바이트를 읽는 식으로 완전히 엉뚱한 값이 나오는 상태였다. 이번에 asm이 실제로 쌓는 순서 그대로 struct를 다시 그렸다:
+`interrupts.asm`의 `interrupt_common`은 이미 37에서 `rax/rcx/rdx/rbx/rbp/rsi/rdi/r8`~`r15`(전부 8바이트, 15개 — `pushad`가 32비트에서 하던 "GPR 전부 저장"을 64비트 레지스터 전부로 확장한 것, 37의 `CLAUDE.md` 참고)로 짜여 있었다. 문제는 `interrupts.h`의 `struct interrupt_frame`이 옛날 32비트 `pusha` 순서(edi,esi,ebp,**esp**,ebx,edx,ecx,eax — 8개)를 그대로 `u32`로 갖고 있었다는 것 — 필드 폭도 순서도 개수도 다 어긋나 있어 `frame->vector`가 실제로는 엉뚱한 레지스터의 하위 4바이트를 읽는 식으로 완전히 틀린 값이 나오는 상태였다. 이번에 asm이 실제로 쌓는 순서 그대로 struct를 다시 그렸다:
 
-스택 최상단(rsp)부터: `rdi, rsi, rbp, rbx, rdx, rcx, rax`(수동 push 7개) → `vector, error_code`(ISR 스텁이 push) → `rip, cs, rflags, rsp, ss`(CPU가 iretq용으로 자동 push하는 5개).
+스택 최상단(rsp)부터: `r15, r14, r13, r12, r11, r10, r9, r8, rdi, rsi, rbp, rbx, rdx, rcx, rax`(수동 push 15개) → `vector, error_code`(ISR 스텁이 push) → `rip, cs, rflags, rsp, ss`(CPU가 iretq용으로 자동 push하는 5개).
 
 ```c
 struct interrupt_frame {
+    u64 r15;  u64 r14;  u64 r13;  u64 r12;
+    u64 r11;  u64 r10;  u64 r9;   u64 r8;
     u64 rdi;  u64 rsi;  u64 rbp;  u64 rbx;
     u64 rdx;  u64 rcx;  u64 rax;
     u64 vector;  u64 error_code;
@@ -41,7 +43,7 @@ struct interrupt_frame {
 };
 ```
 
-`mov rdi, rsp; call interrupt_dispatch`로 이 구조체 포인터를 그대로 넘기므로, 필드 순서가 스택 레이아웃과 1:1로 맞아야 한다.
+`mov rdi, rsp; call interrupt_dispatch`로 이 구조체 포인터를 그대로 넘기므로, 필드 순서가 스택 레이아웃과 1:1로 맞아야 한다. `r12`~`r15`는 ABI상 callee-saved라 엄밀히는 없어도 크게 위험하진 않았겠지만, "인터럽트 프레임은 GPR 전체의 완전한 스냅샷"이라는 37의 원칙을 그대로 따라 전부 필드로 넣었다.
 
 ### syscall.c 갱신 — fork_resume_t는 39로 유보
 
@@ -93,7 +95,7 @@ long mode: IDT-64 ready (processes in 39)
 
 | 파일 | 상태 | 설명 |
 |------|------|------|
-| `boot/interrupts.h` | 수정 | `struct interrupt_frame`을 실제 push 순서(rdi,rsi,rbp,rbx,rdx,rcx,rax,vector,error_code,rip,cs,rflags,user_rsp,user_ss) 그대로 `u64` 필드로 재설계 |
+| `boot/interrupts.h` | 수정 | `struct interrupt_frame`을 실제 push 순서(r15,r14,r13,r12,r11,r10,r9,r8,rdi,rsi,rbp,rbx,rdx,rcx,rax,vector,error_code,rip,cs,rflags,user_rsp,user_ss) 그대로 `u64` 필드로 재설계 |
 | `boot/interrupts.c` | 수정 | `idt_entry` 16바이트(ist/offset_mid/offset_high/reserved 추가); `idt_pointer.base` u64; `idt_set_entry(u8, u64, ...)`; `handle_exception`/`handle_irq`/`interrupt_dispatch`가 새 필드명 사용; rip/cr2를 `%016lX`로 출력 |
 | `boot/console.c` | 수정 | `console_write_unsigned64_padded` 추가; `console_vprintf`에 `%l` 길이 지정자(u64 인자) 지원 |
 | `boot/syscall.c` | 수정 | `frame->eax/ebx/ecx/edx/edi/esi/ebp/user_esp/eflags` → `frame->rax/rbx/rcx/rdx/rdi/rsi/rbp/user_rsp/rflags`; 정수 인자는 `(u32)` 다운캐스트, 포인터 인자는 64비트 그대로 캐스트; `SYS_FORK`/`SYS_CLONE`은 여전히 `u32` `fork_resume_t`에 `(u32)frame->r**`로 다운캐스트해서 채움(구조체 자체는 39까지 유보) |
