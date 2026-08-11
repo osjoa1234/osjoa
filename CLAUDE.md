@@ -86,9 +86,9 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 39 | `39-paging-thread-64` | paging(4단계 PML4/PDPT/PD/PT)+kheap 재배치+thread/context_switch 64비트 포팅 — 커널 쓰레드만, 유저모드 없음 — 64비트 전환 3/4 |
 | 40 | `40-usermode-64` | gdt `iretq` 링3 진입 + ELF64 + process/syscall 포팅 + initrd u64 — `proc_spawn("init")`으로 유저 셸 부팅 — 64비트 전환 4/4 |
 | 41 | `41-brk` | `process_t`에 heap_end 추가, `sys_brk(45)` 구현 — musl malloc 전제조건 |
-| 42 | `42-tls` | `arch_prctl(172)` ARCH_SET_FS, FS.base MSR 설정, `getpid`/`getuid`/`uname` stub |
-| 43 | `43-musl-hello` | musl-static으로 빌드한 첫 외부 바이너리를 initrd에 넣어 실행 검증 |
-| 44 | `44-mmap` | 익명 `mmap2(192)` + `mprotect`/`fstat` stub — busybox 단순 유틸(`cat`, `echo`) 실행 |
+| 42 | `42-mmap` | 익명 `mmap2(192)` + `mprotect`/`fstat` stub — musl mallocng의 mmap 기반 청크 할당 지원 |
+| 43 | `43-tls` | `arch_prctl(172)` ARCH_SET_FS, FS.base MSR 설정, `getpid`/`getuid`/`uname` stub |
+| 44 | `44-musl-hello` | musl-static으로 빌드한 첫 외부 바이너리를 initrd에 넣어 실행 검증 — brk+mmap+tls 모두 갖춘 뒤 검증 |
 | 45 | `45-signal` | per-process 시그널 핸들러 테이블, 유저 공간 트램폴린 + `sigreturn`, Ctrl+C→SIGINT |
 | 46 | `46-pipe` | `pipe(42)`, `dup2(63)` — 셸 파이프(`\|`)와 리다이렉션(`>`) |
 | 47 | `47-busybox-sh` | `chdir`, `access`, ioctl stub 추가 — busybox sh를 initrd에서 실행 |
