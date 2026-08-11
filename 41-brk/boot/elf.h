@@ -32,6 +32,6 @@ typedef struct {
 } Elf64_Phdr;
 
 u64 elf_load(const u8 *data, u32 size);
-u64 elf_load_process(const u8 *data, u32 size, u32 pd_phys, u64 *out_brk_start);
+u64 elf_load_process(const u8 *data, u32 size, u32 pml4_phys, u64 *out_brk_start);
 
 #endif

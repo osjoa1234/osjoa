@@ -82,7 +82,7 @@ u32 proc_spawn(const char *name)
 {
     process_t *p;
     int        bin_fd;
-    u32        pd;
+    u32        pml4_phys;
     u64        entry;
     u64        brk_start;
     thread_t  *t;
@@ -93,12 +93,12 @@ u32 proc_spawn(const char *name)
     bin_fd = initrd_open(name);
     if (bin_fd < 0) { p->state = PROC_FREE; return (u32)-1U; }
 
-    pd    = paging_clone_dir();
-    entry = elf_load_process(initrd_data(bin_fd), initrd_size(bin_fd), pd, &brk_start);
+    pml4_phys = paging_clone_dir();
+    entry     = elf_load_process(initrd_data(bin_fd), initrd_size(bin_fd), pml4_phys, &brk_start);
     if (!entry) { p->state = PROC_FREE; return (u32)-1U; }
 
     p->entry      = entry;
-    p->pd_phys    = pd;
+    p->pml4_phys  = pml4_phys;
     p->heap_start = brk_start;
     p->heap_end   = brk_start;
     p->parent_pid = PROC_NO_PARENT;
@@ -110,7 +110,7 @@ u32 proc_spawn(const char *name)
     t = thread_create_with_data(proc_run_trampoline, p);
     if (!t) { p->state = PROC_FREE; return (u32)-1U; }
 
-    t->pd        = pd;
+    t->pd        = pml4_phys;
     t->proc_next = 0;
     p->threads   = t;
 
@@ -121,7 +121,7 @@ u32 proc_fork(const fork_resume_t *ctx)
 {
     process_t *parent = (process_t *)thread_current()->user_data;
     process_t *child;
-    u32        child_pd;
+    u32        child_pml4_phys;
     u32        j;
     thread_t  *t;
 
@@ -132,12 +132,12 @@ u32 proc_fork(const fork_resume_t *ctx)
         if (parent->fds[j]) child->fds[j] = vfs_dup(parent->fds[j]);
     }
 
-    child_pd = paging_clone_dir();
-    paging_copy_user_pages(parent->pd_phys, child_pd);
+    child_pml4_phys = paging_clone_dir();
+    paging_copy_user_pages(parent->pml4_phys, child_pml4_phys);
 
     child->fork_ctx   = *ctx;
     child->entry      = ctx->rip;
-    child->pd_phys    = child_pd;
+    child->pml4_phys  = child_pml4_phys;
     child->heap_start = parent->heap_start;
     child->heap_end   = parent->heap_end;
     child->parent_pid = parent->pid;
@@ -145,7 +145,7 @@ u32 proc_fork(const fork_resume_t *ctx)
     t = thread_create_with_data(fork_child_trampoline, child);
     if (!t) { child->state = PROC_FREE; return (u32)-1U; }
 
-    t->pd         = child_pd;
+    t->pd         = child_pml4_phys;
     t->proc_next  = 0;
     child->threads = t;
 
@@ -167,9 +167,9 @@ void proc_exec(const char *name)
     fd = initrd_open(name);
     if (fd < 0) return;
 
-    paging_free_user_pages(p->pd_phys);
+    paging_free_user_pages(p->pml4_phys);
 
-    entry = elf_load_process(initrd_data(fd), initrd_size(fd), p->pd_phys, &brk_start);
+    entry = elf_load_process(initrd_data(fd), initrd_size(fd), p->pml4_phys, &brk_start);
     if (!entry) return;
 
     p->entry      = entry;
@@ -247,7 +247,7 @@ u32 proc_clone(const fork_resume_t *ctx)
 
     t = thread_create_with_data(clone_fork_trampoline, cctx);
     if (!t) { kfree(cctx); return (u32)-1U; }
-    t->pd = p->pd_phys;
+    t->pd = p->pml4_phys;
 
     last = p->threads;
     while (last->proc_next) last = last->proc_next;
@@ -319,7 +319,7 @@ u64 proc_brk(u64 new_brk)
         u8 *fdst  = (u8 *)((u64)frame + KERNEL_OFFSET);
         u32 k;
         for (k = 0U; k < 0x1000U; k++) fdst[k] = 0U;
-        paging_map_user_page(p->pd_phys, va, frame);
+        paging_map_user_page(p->pml4_phys, va, frame);
     }
 
     p->heap_end = new_brk;

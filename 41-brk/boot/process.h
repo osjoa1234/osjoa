@@ -42,7 +42,7 @@ typedef struct {
     u32          exit_code;
     u64          entry;
     fork_resume_t fork_ctx;
-    u32          pd_phys;
+    u32          pml4_phys;
     u64          heap_start;
     u64          heap_end;
     thread_t    *threads;

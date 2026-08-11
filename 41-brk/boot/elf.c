@@ -39,7 +39,7 @@ u64 elf_load(const u8 *data, u32 size)
     return ehdr->e_entry;
 }
 
-u64 elf_load_process(const u8 *data, u32 size, u32 pd_phys, u64 *out_brk_start)
+u64 elf_load_process(const u8 *data, u32 size, u32 pml4_phys, u64 *out_brk_start)
 {
     const Elf64_Ehdr *ehdr;
     u16 i;
@@ -81,7 +81,7 @@ u64 elf_load_process(const u8 *data, u32 size, u32 pd_phys, u64 *out_brk_start)
                     fdst[k] = data[phdr->p_offset + foff + k];
             }
 
-            paging_map_user_page(pd_phys, vaddr + pg, frame);
+            paging_map_user_page(pml4_phys, vaddr + pg, frame);
         }
     }
 
@@ -90,7 +90,7 @@ u64 elf_load_process(const u8 *data, u32 size, u32 pd_phys, u64 *out_brk_start)
         u8 *s = (u8 *)((u64)stack_frame + KERNEL_OFFSET);
         u32 k;
         for (k = 0U; k < 0x1000U; k++) s[k] = 0U;
-        paging_map_user_page(pd_phys, PROC_USTACK_TOP - 0x1000ULL, stack_frame);
+        paging_map_user_page(pml4_phys, PROC_USTACK_TOP - 0x1000ULL, stack_frame);
     }
 
     if (out_brk_start) *out_brk_start = (brk_end + 0xFFFULL) & ~0xFFFULL;
