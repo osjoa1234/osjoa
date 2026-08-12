@@ -23,9 +23,9 @@ heap_end = new_brk             // 페이지 경계에 맞추지 않은 정확한
 
 `heap_end`는 항상 요청받은 정확한 바이트 값(페이지 정렬 전)을 저장하고, 다음 호출에서 `round_up(heap_end)`로 "이미 매핑된 페이지 상한"을 재계산한다 — 별도 필드 없이 `heap_end` 하나로 충분한 이유는 `round_up(new_brk)`가 이번 호출이 끝난 뒤의 "실제 매핑 상한"과 항상 일치하기 때문이다(다음 호출의 `old_top`이 정확히 그 값이 되어 재매핑 없이 이어진다). `new_brk < heap_start`인 요청(축소 요청, 그리고 관례상 조회용 `brk(0)`도 여기 포함된다 — 0은 항상 `heap_start`보다 작으므로 별도 분기 없이 "현재 `heap_end` 그대로 반환"으로 처리된다)은 페이지를 매핑하지 않고 `heap_end`를 그대로 반환한다.
 
-### 알려진 한계 — brk 축소는 페이지를 해제하지 않는다
+### brk 축소 — paging_unmap_user_page로 실제 언맵
 
-`paging.c`에는 프로세스 전체를 죽일 때 쓰는 `paging_free_user_pages`(전체 순회)만 있고, 임의의 유저 페이지 한 장을 언맵하는 함수가 없다. `proc_brk`가 `new_brk < heap_end`로 축소 요청을 받으면 `heap_end`는 줄어들지만 이미 매핑된 페이지는 그대로 남는다(다음에 다시 늘리면 `round_up(heap_end)`가 이미 매핑된 페이지를 가리키므로 재매핑도 안 하고 그냥 재사용됨 — 데이터가 지워지지 않는 부작용은 있지만 크래시는 없다). musl malloc은 힙을 거의 줄이지 않고 늘리기만 하다가 큰 할당은 `mmap`으로 돌리는 전략을 쓰므로 44(`musl-hello`) 검증에는 지장이 없을 것으로 보고, 언맵 지원은 미룬다.
+`paging.c`에는 프로세스 전체를 죽일 때 쓰는 `paging_free_user_pages`(전체 순회)만 있었고, 임의의 유저 페이지 한 장을 언맵하는 함수가 없었다. `brk(2)`는 축소 요청을 실제로 이행해 페이지를 해제하는 게 커널의 몫이지 malloc의 몫이 아니므로(malloc은 "언제 축소를 요청할지"라는 정책만 결정할 뿐, 축소 요청이 왔을 때 이를 이행하는 건 syscall 구현의 책임이다), `walk_pt`(`create=0`)로 PTE를 찾아 `page_free` 후 0으로 지우는 `paging_unmap_user_page(pml4_phys, vaddr)`를 추가했다. `proc_brk`는 `[old_top, new_top)` 매핑 루프 뒤에 `[new_top, old_top)` 언맵 루프를 대칭으로 둔다 — 둘 중 성장/축소에 따라 한쪽만 실제로 순회한다.
 
 ### fork/exec에서의 heap 필드 전파
 
@@ -63,7 +63,9 @@ $
 | `boot/elf.h` | 수정 | `elf_load_process`에 `u64 *out_brk_start` 출력 인자 추가 |
 | `boot/elf.c` | 수정 | `PT_LOAD` 순회 중 `p_vaddr+p_memsz` 최댓값을 추적해 페이지 정렬 후 `out_brk_start`로 반환 |
 | `boot/process.h` | 수정 | `process_t`에 `heap_start`/`heap_end`(u64) 추가; `proc_brk` 선언 |
-| `boot/process.c` | 수정 | `proc_spawn`/`proc_exec`가 `elf_load_process`의 `brk_start`로 힙 필드 초기화; `proc_fork`가 부모 힙 필드 복사; `proc_brk` 구현(온디맨드 페이지 매핑) |
+| `boot/process.c` | 수정 | `proc_spawn`/`proc_exec`가 `elf_load_process`의 `brk_start`로 힙 필드 초기화; `proc_fork`가 부모 힙 필드 복사; `proc_brk` 구현(온디맨드 페이지 매핑 + 축소 시 언맵) |
+| `boot/paging.h` | 수정 | `paging_unmap_user_page` 선언 추가 |
+| `boot/paging.c` | 수정 | `paging_unmap_user_page` 구현 — `walk_pt(create=0)`로 PTE를 찾아 `page_free` 후 클리어 |
 | `boot/syscall.h` | 수정 | `SYS_BRK = 45` 추가 |
 | `boot/syscall.c` | 수정 | `SYS_BRK` 케이스에서 `proc_brk(frame->rbx)` 호출 |
 | `user/brk.c` | 신규 | `sys_brk`로 힙 시작/끝 주소를 출력하고 8KB(2페이지) 전체에 조용히 쓰기 — 검증용 유저 프로그램 |
@@ -72,5 +74,4 @@ $
 
 ## 다음 단계 힌트
 
-- `42-mmap`: 익명 `mmap2(192)` + `mprotect`/`fstat` stub. `proc_brk`가 `paging_map_user_page`로 온디맨드 매핑하는 패턴을 그대로 재사용할 수 있다 — 다만 mmap은 브레이크 힙과 겹치지 않는 별도 주소 구간(스택 아래쪽 등)을 스스로 골라야 하므로, `process_t`에 "다음 mmap 배치 주소" 같은 커서를 하나 더 둘 필요가 있을 것.
-- brk 축소 시 페이지 언맵(위 "알려진 한계")은 44(`musl-hello`) 검증에서 실제로 문제가 되면 그때 `paging.c`에 단일 페이지 언맵 함수를 추가하는 편이 낫다 — 지금 미리 만들면 검증되지 않은 코드가 된다.
+- `42-mmap`: 익명 `mmap2(192)` + `mprotect`/`fstat` stub. `proc_brk`가 `paging_map_user_page`/`paging_unmap_user_page`로 온디맨드 매핑·언맵하는 패턴을 그대로 재사용할 수 있다 — 다만 mmap은 브레이크 힙과 겹치지 않는 별도 주소 구간(스택 아래쪽 등)을 스스로 골라야 하므로, `process_t`에 "다음 mmap 배치 주소" 같은 커서를 하나 더 둘 필요가 있을 것.

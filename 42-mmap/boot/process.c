@@ -101,6 +101,7 @@ u32 proc_spawn(const char *name)
     p->pml4_phys  = pml4_phys;
     p->heap_start = brk_start;
     p->heap_end   = brk_start;
+    p->mmap_next  = PROC_MMAP_TOP;
     p->parent_pid = PROC_NO_PARENT;
 
     p->fds[0] = console_dev_open();
@@ -140,6 +141,7 @@ u32 proc_fork(const fork_resume_t *ctx)
     child->pml4_phys  = child_pml4_phys;
     child->heap_start = parent->heap_start;
     child->heap_end   = parent->heap_end;
+    child->mmap_next  = parent->mmap_next;
     child->parent_pid = parent->pid;
 
     t = thread_create_with_data(fork_child_trampoline, child);
@@ -175,6 +177,7 @@ void proc_exec(const char *name)
     p->entry      = entry;
     p->heap_start = brk_start;
     p->heap_end   = brk_start;
+    p->mmap_next  = PROC_MMAP_TOP;
     enter_user_mode(entry, PROC_USTACK_TOP);
     for (;;) { __asm__ volatile ("hlt"); }
 }
@@ -328,4 +331,31 @@ u64 proc_brk(u64 new_brk)
 
     p->heap_end = new_brk;
     return p->heap_end;
+}
+
+u64 proc_mmap(u64 length, u32 prot, u32 flags)
+{
+    process_t *p = (process_t *)thread_current()->user_data;
+    u64        len;
+    u64        start;
+    u64        va;
+
+    (void)prot;
+
+    if (!(flags & MAP_ANONYMOUS)) return (u64)-1;
+    if (length == 0U) return (u64)-1;
+
+    len   = (length + 0xFFFULL) & ~0xFFFULL;
+    start = p->mmap_next - len;
+
+    for (va = start; va < p->mmap_next; va += 0x1000ULL) {
+        u32 frame = page_alloc();
+        u8 *fdst  = (u8 *)((u64)frame + KERNEL_OFFSET);
+        u32 k;
+        for (k = 0U; k < 0x1000U; k++) fdst[k] = 0U;
+        paging_map_user_page(p->pml4_phys, va, frame);
+    }
+
+    p->mmap_next = start;
+    return start;
 }
