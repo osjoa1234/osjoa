@@ -5,17 +5,16 @@ SECTION .text
 global clone_trampoline
 
 clone_trampoline:
-    mov rbx, rdi
-    mov eax, 120
-    int 0x80
+    mov eax, 56
+    syscall
     test eax, eax
     jnz .parent
     pop rax
     pop rdi
     push rdi
     call rax
-    mov eax, 201
-    int 0x80
+    mov eax, 60
+    syscall
 .parent:
     ret
 

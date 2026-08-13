@@ -12,44 +12,44 @@ typedef struct {
 
 static unsigned long tls_block[8];
 
-static unsigned int sys_write(unsigned int fd, const char *buf, unsigned int len)
+static unsigned int sys_write(unsigned int fd, const char *buf, unsigned long len)
 {
-    unsigned int n;
-    __asm__ volatile ("int $0x80" : "=a"(n) : "0"(4U), "b"(fd), "c"(buf), "d"(len) : "memory");
-    return n;
+    long ret;
+    __asm__ volatile ("syscall" : "=a"(ret) : "a"(1L), "D"(fd), "S"(buf), "d"(len) : "rcx", "r11", "memory");
+    return (unsigned int)ret;
 }
 
 static void sys_exit(unsigned int code)
 {
-    __asm__ volatile ("int $0x80" : : "a"(1U), "b"(code));
+    __asm__ volatile ("syscall" : : "a"(231L), "D"(code) : "rcx", "r11", "memory");
 }
 
 static long sys_arch_prctl(unsigned int code, unsigned long addr)
 {
     long ret;
-    __asm__ volatile ("int $0x80" : "=a"(ret) : "0"(172U), "b"(code), "c"(addr) : "memory");
+    __asm__ volatile ("syscall" : "=a"(ret) : "a"(158L), "D"(code), "S"(addr) : "rcx", "r11", "memory");
     return ret;
 }
 
 static unsigned int sys_getpid(void)
 {
-    unsigned int pid;
-    __asm__ volatile ("int $0x80" : "=a"(pid) : "0"(20U) : "memory");
-    return pid;
+    long ret;
+    __asm__ volatile ("syscall" : "=a"(ret) : "a"(39L) : "rcx", "r11", "memory");
+    return (unsigned int)ret;
 }
 
 static unsigned int sys_getuid(void)
 {
-    unsigned int uid;
-    __asm__ volatile ("int $0x80" : "=a"(uid) : "0"(24U) : "memory");
-    return uid;
+    long ret;
+    __asm__ volatile ("syscall" : "=a"(ret) : "a"(102L) : "rcx", "r11", "memory");
+    return (unsigned int)ret;
 }
 
 static unsigned int sys_uname(utsname_t *buf)
 {
-    unsigned int ret;
-    __asm__ volatile ("int $0x80" : "=a"(ret) : "0"(122U), "b"(buf) : "memory");
-    return ret;
+    long ret;
+    __asm__ volatile ("syscall" : "=a"(ret) : "a"(63L), "D"(buf) : "rcx", "r11", "memory");
+    return (unsigned int)ret;
 }
 
 static unsigned int slen(const char *s)

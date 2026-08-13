@@ -1,13 +1,13 @@
-static unsigned int sys_write(unsigned int fd, const char *buf, unsigned int len)
+static unsigned int sys_write(unsigned int fd, const char *buf, unsigned long len)
 {
-    unsigned int n;
-    __asm__ volatile ("int $0x80" : "=a"(n) : "0"(4U), "b"(fd), "c"(buf), "d"(len) : "memory");
-    return n;
+    long ret;
+    __asm__ volatile ("syscall" : "=a"(ret) : "a"(1L), "D"(fd), "S"(buf), "d"(len) : "rcx", "r11", "memory");
+    return (unsigned int)ret;
 }
 
 static void sys_exit(unsigned int code)
 {
-    __asm__ volatile ("int $0x80" : : "a"(1U), "b"(code));
+    __asm__ volatile ("syscall" : : "a"(231L), "D"(code) : "rcx", "r11", "memory");
 }
 
 static unsigned int slen(const char *s)
