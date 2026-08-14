@@ -8,7 +8,7 @@ syscall_user_rsp_scratch: dq 0
 
 SECTION .text
 
-extern syscall64_dispatch
+extern syscall_dispatch
 
 global syscall_entry
 
@@ -41,7 +41,9 @@ syscall_entry:
     push r15
 
     mov rdi, rsp
-    call syscall64_dispatch
+    sti
+    call syscall_dispatch
+    cli
 
     pop r15
     pop r14

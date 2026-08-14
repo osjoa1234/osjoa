@@ -88,7 +88,7 @@ void kernel_main(u32 magic, u32 phys_mbi)
     interrupts_init();
 
     console_set_color(0x0D);
-    console_printf("IDT ready: 256 entries (16-byte gates) PIC=0x20/0x28 syscall=0x80(DPL=3)\n");
+    console_printf("IDT ready: 256 entries (16-byte gates) PIC=0x20/0x28\n");
 
     kheap_init();
 
