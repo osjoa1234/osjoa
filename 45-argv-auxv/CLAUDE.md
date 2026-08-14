@@ -32,6 +32,19 @@ Linux의 표준 초기 스택 레이아웃은 `argc, argv[0..], NULL, envp[0..],
 
 일반 `void _start(void) { ... }`는 컴파일러가 함수 프롤로그(`push rbp` 등)를 먼저 넣어서, 그 시점엔 커널이 넘겨준 원본 `%rsp` 값이 이미 로컬 변수 공간 계산에 밀려 정확히 어디였는지 알 수 없다. `_start`를 파일 스코프 `__asm__` 블록으로 손수 짜서 `%rsp`를 그대로 `%rdi`에 담아 `start_main(unsigned long *stack)`로 넘긴다 — 진짜 musl의 `crt_arch.h`가 하는 것과 같은 패턴이다. `start_main`은 `stack[0]`을 `argc`로, `stack+1`을 `argv`로 읽고, `argv+argc+1`부터 `envp`, 그 NULL 다음부터 `auxv`로 걸어가서 `AT_PAGESZ`(6) 값을 찾아 출력한다 — `elf_setup_stack`이 만든 레이아웃이 진짜로 맞는지 프로그램 스스로 확인하는 것이다. 이후는 44의 `arch_prctl`/`getpid`/`getuid`/`uname` 검증을 그대로 이어간다 — 같은 파일, 같은 명령(`syscall64`), 한 단계 더 검증하는 내용이 늘었을 뿐이다.
 
+### 셸에서 여러 인자 넘기기 — argc=1 고정을 걷어내다
+
+여기까지는 `elf_setup_stack`이 항상 `argc=1`(exec한 이름 하나)만 만들었다 — 스택 레이아웃의 *형식*이 맞는지만 검증하면 충분했기 때문이다. 이 형식이 맞다는 게 확인된 김에, `argv`가 실제로 여러 개일 때도 똑같이 동작하는지까지 검증 범위를 넓혔다.
+
+세 군데를 같이 고쳐야 사슬이 이어진다:
+1. **`init.c` 셸**: 지금까지 입력 줄 전체를 통짜 문자열 하나로 `sys_exec`에 넘겼다. 새 `split_argv`가 공백 기준으로 줄을 잘라(`buf`를 제자리에서 `\0`로 토막 내며) `argv[]` 포인터 배열을 만들고, `sys_exec(name, argv)`가 `rdi`(path)뿐 아니라 `rsi`(argv 포인터)도 실어 보낸다 — 진짜 `execve(2)`와 같은 레지스터 관례다.
+2. **`syscall.c`의 `SYS_EXECVE`**: `frame->rsi`를 `argv`로 읽어 `proc_exec(name, argv)`에 그대로 전달한다.
+3. **`elf_setup_stack`**: 문자열 하나(`argv0`)만 받던 시그니처를 `char *const argv[]` + `argc`로 일반화했다. 스택에 문자열을 쓰는 루프, 포인터 테이블을 쓰는 루프 둘 다 `argc`만큼 반복하도록 바뀌었을 뿐, 레이아웃 자체(`argc, argv[0..], NULL, NULL(envp), auxv...`)는 그대로다. 인자 개수는 `USTACK_ARGV_MAX`(8개)로 상한을 둔다.
+
+`proc_exec`도 45 앞부분에서 고친 use-after-free 패턴을 그대로 인자 개수만큼 확장했다 — `argv[]`가 가리키는 문자열들도 exec하는 프로세스 자신의 유저 메모리이므로, `paging_free_user_pages` 전에 커널 지역 버퍼(`argv_buf[PROC_EXEC_ARGMAX][PROC_EXEC_ARGLEN]`)로 전부 복사해둬야 한다. `proc_spawn`(커널이 `"init"`을 직접 호출하는 경로)은 `argv`를 안 받으므로 `{name, NULL}` 1개짜리 배열을 그 자리에서 만들어 넘긴다.
+
+`syscall64.c`도 `argv[0]`만 찍던 걸 `for (i = 0; i < argc; i++)`로 바꿔 전체 `argv[]`를 출력하도록 확장해서, `syscall64 foo bar baz`처럼 실제로 여러 인자를 넘겼을 때 커널이 만든 스택이 끝까지 맞는지 눈으로 확인할 수 있게 했다.
+
 ## 명령
 
 ```bash
@@ -43,17 +56,20 @@ make clean
 
 ## 완료 기준
 
-`make run-nogui`는 44와 동일하게 `$` 프롬프트에서 멈춘다. GUI(`make run`)에서 `syscall64`를 입력하면:
+`make run-nogui`는 44와 동일하게 `$` 프롬프트에서 멈춘다. GUI(`make run`)에서 `syscall64 foo bar baz`처럼 인자를 붙여 입력하면:
 
 ```
-$ syscall64
-syscall64: argc = 0x0000000000000001
-syscall64: argv[0] = syscall64
+$ syscall64 foo bar baz
+syscall64: argc = 0x0000000000000004
+syscall64: argv[0000000000000000] = syscall64
+syscall64: argv[0000000000000001] = foo
+syscall64: argv[0000000000000002] = bar
+syscall64: argv[0000000000000003] = baz
 syscall64: auxv AT_PAGESZ = 0x0000000000001000
 syscall64: arch_prctl(SET_FS) rc = 0x0000000000000000
 syscall64: fs:0 = 0x1234567890ABCDEF
 syscall64: arch_prctl(GET_FS) rc = 0x0000000000000000
-syscall64: fs_base readback = 0x00000000003006C0
+syscall64: fs_base readback = 0x0000000000300780
 syscall64: getpid = 0x0000000000000001
 syscall64: getuid = 0x0000000000000000
 syscall64: uname rc = 0x0000000000000000
@@ -63,18 +79,20 @@ process 1 exited: code=0
 $
 ```
 
-`argc=1`, `argv[0]=syscall64`, `AT_PAGESZ=0x1000`이 정확히 나와야 스택 레이아웃이 맞은 것이다. `hello`/`hello2`/`brk`/`mmap`/`tls`도 그대로 동작해야 한다(회귀 없음, 특히 `elf_load_process`의 페이지 정렬 수정이 기존 프로그램들의 로딩을 깨지 않았는지가 중요) — QEMU 모니터의 `sendkey`(QMP `send-key`)로 순서대로 확인했다.
+`argc=4`, `argv[0..3]=syscall64/foo/bar/baz`, `AT_PAGESZ=0x1000`이 정확히 나와야 스택 레이아웃이 맞은 것이다. 인자 없이 `syscall64`만 입력해도 `argc=1`, `argv[0]=syscall64`로 그대로 동작해야 한다(하위 호환). `hello`/`hello2`/`brk`/`mmap`/`tls`도 그대로 동작해야 한다(회귀 없음, 특히 `elf_load_process`의 페이지 정렬 수정과 `elf_setup_stack`의 다중 인자 일반화가 기존 프로그램들의 로딩을 깨지 않았는지가 중요) — QEMU 모니터의 `sendkey`(QMP `send-key`)로 순서대로 확인했다.
 
 ## 이전 단계(44) 대비 변경 파일
 
 | 파일 | 상태 | 설명 |
 |------|------|------|
 | `boot/entry.asm` | 수정 | CR4.OSFXSR/OSXMMEXCPT, CR0.EM 클리어/MP 설정 — SSE2 코드가 `#UD` 없이 실행되도록 |
-| `boot/elf.h` | 수정 | `elf_load_process`에 `out_phdr`/`out_phnum`/`out_phentsize` 추가, `elf_setup_stack` 선언 |
-| `boot/elf.c` | 수정 | 세그먼트 페이지 정렬 버그 수정(오프셋 있는 `p_vaddr` 처리), `AT_PHDR` 계산 추가, 새 `elf_setup_stack`(argv/envp/auxv 스택 구성) |
-| `boot/process.h` | 수정 | `PROC_USTACK_PAGES`(8) 추가, `PROC_USTACK_TOP` 4MB→16MB, `process_t.user_rsp` 필드 추가 |
-| `boot/process.c` | 수정 | `proc_spawn`/`proc_exec`가 `elf_setup_stack` 호출 후 계산된 RSP 사용, `proc_exec`는 `name` 문자열을 `paging_free_user_pages` 전에 지역 버퍼로 복사(use-after-free 수정) |
-| `user/syscall64.c` | 수정 | `_start`를 파일 스코프 asm으로 다시 작성해 진짜 초기 스택(`argc`/`argv`/`auxv`)을 직접 읽어 출력, 이후 44의 검증 내용을 그대로 이어감 |
+| `boot/elf.h` | 수정 | `elf_load_process`에 `out_phdr`/`out_phnum`/`out_phentsize` 추가, `elf_setup_stack`이 문자열 하나 대신 `argv[]`+`argc`를 받도록 선언 변경 |
+| `boot/elf.c` | 수정 | 세그먼트 페이지 정렬 버그 수정(오프셋 있는 `p_vaddr` 처리), `AT_PHDR` 계산 추가, `elf_setup_stack`을 `argv[]`(최대 `USTACK_ARGV_MAX`=8개) + `argc`를 받아 스택에 쓰도록 일반화 |
+| `boot/process.h` | 수정 | `PROC_USTACK_PAGES`(8) 추가, `PROC_USTACK_TOP` 4MB→16MB, `process_t.user_rsp` 필드 추가, `PROC_EXEC_ARGMAX`(8)/`PROC_EXEC_ARGLEN`(64) 추가, `proc_exec` 시그니처에 `argv[]` 추가 |
+| `boot/process.c` | 수정 | `proc_spawn`/`proc_exec`가 `elf_setup_stack` 호출 후 계산된 RSP 사용. `proc_exec`는 `name`과 `argv[]`가 가리키는 문자열 전부를 `paging_free_user_pages` 전에 커널 지역 버퍼로 복사(use-after-free 수정, 인자 개수만큼 확장). `proc_spawn`은 `{name, NULL}` 1개짜리 배열을 만들어 `elf_setup_stack`에 넘김 |
+| `boot/syscall.c` | 수정 | `SYS_EXECVE` 핸들러가 `frame->rsi`를 `argv`로 읽어 `proc_exec(name, argv)`에 전달 |
+| `user/init.c` | 수정 | 새 `split_argv`로 입력 줄을 공백 기준 `argv[]` 배열로 토큰화, `sys_exec(name, argv)`가 `rsi`로 `argv` 포인터도 전달(진짜 `execve(2)` 레지스터 관례) |
+| `user/syscall64.c` | 수정 | `_start`를 파일 스코프 asm으로 다시 작성해 진짜 초기 스택(`argc`/`argv`/`auxv`)을 직접 읽어 출력. `argv[0]`뿐 아니라 `argv[0..argc-1]` 전체를 출력하도록 확장해 다중 인자 검증까지 포함 |
 | `Makefile` | 수정 | `boot/elf.c`가 `boot/process.h`를 include하게 된 것을 의존성에 반영 |
 | `CLAUDE.md` | 신규 | 이 문서 |
 

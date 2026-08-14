@@ -17,6 +17,9 @@
 #define PROC_MMAP_TOP     (PROC_USTACK_TOP - (u64)PROC_USTACK_PAGES * 0x1000ULL)
 #define PROC_NO_PARENT    ((u32)-1U)
 
+#define PROC_EXEC_ARGMAX 8U
+#define PROC_EXEC_ARGLEN 64U
+
 #define MAP_ANONYMOUS    0x20U
 
 typedef struct {
@@ -59,7 +62,7 @@ typedef struct {
 void       proc_init(void);
 u32        proc_spawn(const char *name);
 u32        proc_fork(const fork_resume_t *ctx);
-void       proc_exec(const char *name);
+void       proc_exec(const char *name, char *const argv[]);
 void       proc_exit(u32 code);
 void       proc_thread_exit(void);
 u32        proc_clone(const fork_resume_t *ctx);

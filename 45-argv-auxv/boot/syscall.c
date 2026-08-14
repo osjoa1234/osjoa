@@ -235,7 +235,7 @@ void syscall_dispatch(struct interrupt_frame *frame)
         break;
     }
     case SYS_EXECVE:
-        proc_exec((const char *)frame->rdi);
+        proc_exec((const char *)frame->rdi, (char *const *)frame->rsi);
         frame->rax = (u64)-1;
         break;
     case SYS_EXIT:

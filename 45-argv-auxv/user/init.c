@@ -31,9 +31,9 @@ static unsigned int sys_wait(unsigned int pid, unsigned int *code)
     return (unsigned int)ret;
 }
 
-static void sys_exec(const char *name)
+static void sys_exec(const char *name, char *const argv[])
 {
-    __asm__ volatile ("syscall" : : "a"(59L), "D"(name) : "rcx", "r11", "memory");
+    __asm__ volatile ("syscall" : : "a"(59L), "D"(name), "S"(argv) : "rcx", "r11", "memory");
 }
 
 static unsigned int slen(const char *s)
@@ -54,9 +54,29 @@ static int streq(const char *a, const char *b)
     return *a == *b;
 }
 
+#define SHELL_ARGV_MAX 8U
+
+static unsigned int split_argv(char *buf, char *argv[])
+{
+    unsigned int argc = 0U;
+    char        *p    = buf;
+
+    while (*p) {
+        while (*p == ' ') p++;
+        if (!*p) break;
+        if (argc < SHELL_ARGV_MAX) argv[argc++] = p;
+        while (*p && *p != ' ') p++;
+        if (*p) { *p = '\0'; p++; }
+    }
+    argv[argc] = 0;
+    return argc;
+}
+
 void _start(void)
 {
     char         buf[64];
+    char        *argv[SHELL_ARGV_MAX + 1U];
+    unsigned int argc;
     unsigned int n;
     unsigned int pid;
     unsigned int exit_code;
@@ -70,7 +90,10 @@ void _start(void)
         if (n > 0U && buf[n - 1U] == '\n') { buf[n - 1U] = '\0'; n--; }
         if (n == 0U) continue;
 
-        if (streq(buf, "exit")) {
+        argc = split_argv(buf, argv);
+        if (argc == 0U) continue;
+
+        if (streq(argv[0], "exit")) {
             writes("shell: bye\n");
             sys_exit(0U);
             for (;;) {}
@@ -78,7 +101,7 @@ void _start(void)
 
         pid = sys_fork();
         if (pid == 0U) {
-            sys_exec(buf);
+            sys_exec(argv[0], argv);
             writes("shell: not found\n");
             sys_exit(1U);
             for (;;) {}

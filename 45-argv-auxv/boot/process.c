@@ -89,6 +89,7 @@ u32 proc_spawn(const char *name)
     u32        phnum;
     u32        phentsize;
     thread_t  *t;
+    char      *argv[2];
 
     p = proc_alloc();
     if (!p) return (u32)-1U;
@@ -101,8 +102,11 @@ u32 proc_spawn(const char *name)
                                   &brk_start, &phdr, &phnum, &phentsize);
     if (!entry) { p->state = PROC_FREE; return (u32)-1U; }
 
+    argv[0] = (char *)name;
+    argv[1] = 0;
+
     p->entry      = entry;
-    p->user_rsp   = elf_setup_stack(pml4_phys, name, entry, phdr, phnum, phentsize);
+    p->user_rsp   = elf_setup_stack(pml4_phys, argv, 1U, entry, phdr, phnum, phentsize);
     p->pml4_phys  = pml4_phys;
     p->heap_start = brk_start;
     p->heap_end   = brk_start;
@@ -160,7 +164,7 @@ u32 proc_fork(const fork_resume_t *ctx)
     return child->pid;
 }
 
-void proc_exec(const char *name)
+void proc_exec(const char *name, char *const argv[])
 {
     process_t *p = (process_t *)thread_current()->user_data;
     int        fd;
@@ -170,8 +174,10 @@ void proc_exec(const char *name)
     u32        phnum;
     u32        phentsize;
     u64        user_rsp;
-    u32        j;
-    char       argv0[64];
+    u32        j, k;
+    char       argv_buf[PROC_EXEC_ARGMAX][PROC_EXEC_ARGLEN];
+    char      *argv_copy[PROC_EXEC_ARGMAX + 1U];
+    u32        argc;
 
     for (j = 3U; j < PROC_FD_MAX; j++) {
         if (p->fds[j]) { vfs_close(p->fds[j]); p->fds[j] = 0; }
@@ -180,8 +186,21 @@ void proc_exec(const char *name)
     fd = initrd_open(name);
     if (fd < 0) return;
 
-    for (j = 0U; j < 63U && name[j]; j++) argv0[j] = name[j];
-    argv0[j] = '\0';
+    argc = 0U;
+    while (argv && argv[argc] && argc < PROC_EXEC_ARGMAX) {
+        const char *src = argv[argc];
+        for (k = 0U; k < PROC_EXEC_ARGLEN - 1U && src[k]; k++) argv_buf[argc][k] = src[k];
+        argv_buf[argc][k] = '\0';
+        argv_copy[argc] = argv_buf[argc];
+        argc++;
+    }
+    if (argc == 0U) {
+        for (k = 0U; k < PROC_EXEC_ARGLEN - 1U && name[k]; k++) argv_buf[0][k] = name[k];
+        argv_buf[0][k] = '\0';
+        argv_copy[0] = argv_buf[0];
+        argc = 1U;
+    }
+    argv_copy[argc] = 0;
 
     paging_free_user_pages(p->pml4_phys);
 
@@ -189,7 +208,7 @@ void proc_exec(const char *name)
                               &brk_start, &phdr, &phnum, &phentsize);
     if (!entry) return;
 
-    user_rsp = elf_setup_stack(p->pml4_phys, argv0, entry, phdr, phnum, phentsize);
+    user_rsp = elf_setup_stack(p->pml4_phys, argv_copy, argc, entry, phdr, phnum, phentsize);
 
     p->entry      = entry;
     p->user_rsp   = user_rsp;
