@@ -1,39 +1,39 @@
-static unsigned int sys_write(unsigned int fd, const char *buf, unsigned int len)
+static unsigned int sys_write(unsigned int fd, const char *buf, unsigned long len)
 {
-    unsigned int n;
-    __asm__ volatile ("int $0x80" : "=a"(n) : "0"(4U), "b"(fd), "c"(buf), "d"(len) : "memory");
-    return n;
+    long ret;
+    __asm__ volatile ("syscall" : "=a"(ret) : "a"(1L), "D"(fd), "S"(buf), "d"(len) : "rcx", "r11", "memory");
+    return (unsigned int)ret;
 }
 
 static void sys_exit(unsigned int code)
 {
-    __asm__ volatile ("int $0x80" : : "a"(1U), "b"(code));
+    __asm__ volatile ("syscall" : : "a"(231L), "D"(code) : "rcx", "r11", "memory");
 }
 
-static unsigned int sys_read(unsigned int fd, char *buf, unsigned int len)
+static unsigned int sys_read(unsigned int fd, char *buf, unsigned long len)
 {
-    unsigned int n;
-    __asm__ volatile ("int $0x80" : "=a"(n) : "a"(3U), "b"(fd), "c"(buf), "d"(len) : "memory");
-    return n;
+    long ret;
+    __asm__ volatile ("syscall" : "=a"(ret) : "a"(0L), "D"(fd), "S"(buf), "d"(len) : "rcx", "r11", "memory");
+    return (unsigned int)ret;
 }
 
 static unsigned int sys_fork(void)
 {
-    unsigned int pid;
-    __asm__ volatile ("int $0x80" : "=a"(pid) : "0"(2U));
-    return pid;
+    long ret;
+    __asm__ volatile ("syscall" : "=a"(ret) : "a"(57L) : "rcx", "r11", "memory");
+    return (unsigned int)ret;
 }
 
 static unsigned int sys_wait(unsigned int pid, unsigned int *code)
 {
-    unsigned int ret;
-    __asm__ volatile ("int $0x80" : "=a"(ret) : "0"(7U), "b"(pid), "c"(code) : "memory");
-    return ret;
+    long ret;
+    __asm__ volatile ("syscall" : "=a"(ret) : "a"(61L), "D"(pid), "S"(code) : "rcx", "r11", "memory");
+    return (unsigned int)ret;
 }
 
-static void sys_exec(const char *name)
+static void sys_exec(const char *name, char *const argv[])
 {
-    __asm__ volatile ("int $0x80" : : "a"(11U), "b"(name));
+    __asm__ volatile ("syscall" : : "a"(59L), "D"(name), "S"(argv) : "rcx", "r11", "memory");
 }
 
 static unsigned int slen(const char *s)
@@ -54,9 +54,29 @@ static int streq(const char *a, const char *b)
     return *a == *b;
 }
 
+#define SHELL_ARGV_MAX 8U
+
+static unsigned int split_argv(char *buf, char *argv[])
+{
+    unsigned int argc = 0U;
+    char        *p    = buf;
+
+    while (*p) {
+        while (*p == ' ') p++;
+        if (!*p) break;
+        if (argc < SHELL_ARGV_MAX) argv[argc++] = p;
+        while (*p && *p != ' ') p++;
+        if (*p) { *p = '\0'; p++; }
+    }
+    argv[argc] = 0;
+    return argc;
+}
+
 void _start(void)
 {
     char         buf[64];
+    char        *argv[SHELL_ARGV_MAX + 1U];
+    unsigned int argc;
     unsigned int n;
     unsigned int pid;
     unsigned int exit_code;
@@ -70,7 +90,10 @@ void _start(void)
         if (n > 0U && buf[n - 1U] == '\n') { buf[n - 1U] = '\0'; n--; }
         if (n == 0U) continue;
 
-        if (streq(buf, "exit")) {
+        argc = split_argv(buf, argv);
+        if (argc == 0U) continue;
+
+        if (streq(argv[0], "exit")) {
             writes("shell: bye\n");
             sys_exit(0U);
             for (;;) {}
@@ -78,7 +101,7 @@ void _start(void)
 
         pid = sys_fork();
         if (pid == 0U) {
-            sys_exec(buf);
+            sys_exec(argv[0], argv);
             writes("shell: not found\n");
             sys_exit(1U);
             for (;;) {}

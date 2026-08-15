@@ -12,41 +12,43 @@ typedef struct {
     unsigned long st_blksize;
 } stat_t;
 
-static unsigned int sys_write(unsigned int fd, const char *buf, unsigned int len)
+static unsigned int sys_write(unsigned int fd, const char *buf, unsigned long len)
 {
-    unsigned int n;
-    __asm__ volatile ("int $0x80" : "=a"(n) : "0"(4U), "b"(fd), "c"(buf), "d"(len) : "memory");
-    return n;
+    long ret;
+    __asm__ volatile ("syscall" : "=a"(ret) : "a"(1L), "D"(fd), "S"(buf), "d"(len) : "rcx", "r11", "memory");
+    return (unsigned int)ret;
 }
 
 static void sys_exit(unsigned int code)
 {
-    __asm__ volatile ("int $0x80" : : "a"(1U), "b"(code));
+    __asm__ volatile ("syscall" : : "a"(231L), "D"(code) : "rcx", "r11", "memory");
 }
 
 static unsigned long sys_mmap2(unsigned long addr, unsigned long length,
                                 unsigned int prot, unsigned int flags, int fd)
 {
-    unsigned long ret;
-    __asm__ volatile ("int $0x80"
+    long ret;
+    register unsigned long r10 __asm__("r10") = flags;
+    register long          r8  __asm__("r8")  = fd;
+    __asm__ volatile ("syscall"
         : "=a"(ret)
-        : "0"(192U), "b"(addr), "c"(length), "d"(prot), "S"(flags), "D"(fd)
-        : "memory");
-    return ret;
+        : "a"(9L), "D"(addr), "S"(length), "d"(prot), "r"(r10), "r"(r8)
+        : "rcx", "r11", "memory");
+    return (unsigned long)ret;
 }
 
 static unsigned int sys_mprotect(unsigned long addr, unsigned long length, unsigned int prot)
 {
-    unsigned int ret;
-    __asm__ volatile ("int $0x80" : "=a"(ret) : "0"(125U), "b"(addr), "c"(length), "d"(prot) : "memory");
-    return ret;
+    long ret;
+    __asm__ volatile ("syscall" : "=a"(ret) : "a"(10L), "D"(addr), "S"(length), "d"(prot) : "rcx", "r11", "memory");
+    return (unsigned int)ret;
 }
 
 static unsigned int sys_fstat(unsigned int fd, stat_t *buf)
 {
-    unsigned int ret;
-    __asm__ volatile ("int $0x80" : "=a"(ret) : "0"(108U), "b"(fd), "c"(buf) : "memory");
-    return ret;
+    long ret;
+    __asm__ volatile ("syscall" : "=a"(ret) : "a"(5L), "D"(fd), "S"(buf) : "rcx", "r11", "memory");
+    return (unsigned int)ret;
 }
 
 static unsigned int slen(const char *s)

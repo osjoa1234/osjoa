@@ -198,39 +198,71 @@ static u32 sys_munmap(u64 addr, u64 len)
     return 0U;
 }
 
-static u64 sys_mmap64(u64 addr, u64 length, u32 prot, u32 flags, u32 fd, u64 offset)
-{
-    (void)addr;
-    (void)fd;
-    (void)offset;
-    return proc_mmap(length, prot, flags);
-}
-
 void syscall_dispatch(struct interrupt_frame *frame)
 {
     switch ((u32)frame->rax) {
     case SYS_WRITE:
-        frame->rax = sys_write((u32)frame->rbx, (const u8 *)frame->rcx, (u32)frame->rdx);
-        break;
-    case SYS_EXIT:
-        proc_exit((u32)frame->rbx);
-        break;
-    case SYS_OPEN:
-        frame->rax = sys_open((const char *)frame->rbx);
+        frame->rax = sys_write((u32)frame->rdi, (const u8 *)frame->rsi, (u32)frame->rdx);
         break;
     case SYS_READ:
-        frame->rax = sys_read((u32)frame->rbx, (u8 *)frame->rcx, (u32)frame->rdx);
+        frame->rax = sys_read((u32)frame->rdi, (u8 *)frame->rsi, (u32)frame->rdx);
         break;
-    case SYS_SPAWN:
-        frame->rax = proc_spawn((const char *)frame->rbx);
+    case SYS_OPEN:
+        frame->rax = sys_open((const char *)frame->rdi);
         break;
-    case SYS_WAITPID:
-        frame->rax = proc_wait((u32)frame->rbx, (u32 *)frame->rcx);
+    case SYS_CLOSE:
+        sys_close((u32)frame->rdi);
+        frame->rax = 0U;
         break;
-    case SYS_EXECVE:
-        proc_exec((const char *)frame->rbx);
-        frame->rax = (u64)-1;
+    case SYS_FSTAT:
+        frame->rax = sys_fstat((u32)frame->rdi, (stat_t *)frame->rsi);
         break;
+    case SYS_LSEEK:
+        frame->rax = sys_lseek((u32)frame->rdi, (int)frame->rsi, (u32)frame->rdx);
+        break;
+    case SYS_MMAP:
+        frame->rax = proc_mmap(frame->rsi, (u32)frame->rdx, (u32)frame->r10);
+        break;
+    case SYS_MPROTECT:
+        frame->rax = sys_mprotect(frame->rdi, frame->rsi, (u32)frame->rdx);
+        break;
+    case SYS_MUNMAP:
+        frame->rax = sys_munmap(frame->rdi, frame->rsi);
+        break;
+    case SYS_BRK:
+        frame->rax = proc_brk(frame->rdi);
+        break;
+    case SYS_IOCTL:
+        frame->rax = sys_ioctl();
+        break;
+    case SYS_WRITEV:
+        frame->rax = sys_writev((u32)frame->rdi, (const iovec_t *)frame->rsi, (u32)frame->rdx);
+        break;
+    case SYS_GETPID:
+        frame->rax = sys_getpid();
+        break;
+    case SYS_CLONE: {
+        fork_resume_t ctx;
+        ctx.rdi      = frame->rdi;
+        ctx.rsi      = frame->rsi;
+        ctx.rbp      = frame->rbp;
+        ctx.rbx      = frame->rbx;
+        ctx.rdx      = frame->rdx;
+        ctx.rcx      = frame->rcx;
+        ctx.r8       = frame->r8;
+        ctx.r9       = frame->r9;
+        ctx.r10      = frame->r10;
+        ctx.r11      = frame->r11;
+        ctx.r12      = frame->r12;
+        ctx.r13      = frame->r13;
+        ctx.r14      = frame->r14;
+        ctx.r15      = frame->r15;
+        ctx.rip      = frame->rip;
+        ctx.user_rsp = frame->rdi;
+        ctx.rflags   = frame->rflags;
+        frame->rax   = proc_clone(&ctx);
+        break;
+    }
     case SYS_FORK: {
         fork_resume_t ctx;
         ctx.rdi      = frame->rdi;
@@ -253,117 +285,29 @@ void syscall_dispatch(struct interrupt_frame *frame)
         frame->rax   = proc_fork(&ctx);
         break;
     }
-    case SYS_CLONE: {
-        fork_resume_t ctx;
-        ctx.rdi      = frame->rdi;
-        ctx.rsi      = frame->rsi;
-        ctx.rbp      = frame->rbp;
-        ctx.rbx      = frame->rbx;
-        ctx.rdx      = frame->rdx;
-        ctx.rcx      = frame->rcx;
-        ctx.r8       = frame->r8;
-        ctx.r9       = frame->r9;
-        ctx.r10      = frame->r10;
-        ctx.r11      = frame->r11;
-        ctx.r12      = frame->r12;
-        ctx.r13      = frame->r13;
-        ctx.r14      = frame->r14;
-        ctx.r15      = frame->r15;
-        ctx.rip      = frame->rip;
-        ctx.user_rsp = frame->rbx;
-        ctx.rflags   = frame->rflags;
-        frame->rax   = proc_clone(&ctx);
+    case SYS_EXECVE:
+        proc_exec((const char *)frame->rdi, (char *const *)frame->rsi);
+        frame->rax = (u64)-1;
         break;
-    }
-    case SYS_THREAD_EXIT:
+    case SYS_EXIT:
         proc_thread_exit();
         break;
-    case SYS_CLOSE:
-        sys_close((u32)frame->rbx);
-        frame->rax = 0U;
+    case SYS_WAIT4:
+        frame->rax = proc_wait((u32)frame->rdi, (u32 *)frame->rsi);
         break;
-    case SYS_LSEEK:
-        frame->rax = sys_lseek((u32)frame->rbx, (int)frame->rcx, (u32)frame->rdx);
-        break;
-    case SYS_BRK:
-        frame->rax = proc_brk(frame->rbx);
-        break;
-    case SYS_FSTAT:
-        frame->rax = sys_fstat((u32)frame->rbx, (stat_t *)frame->rcx);
-        break;
-    case SYS_MPROTECT:
-        frame->rax = sys_mprotect(frame->rbx, frame->rcx, (u32)frame->rdx);
-        break;
-    case SYS_MMAP2:
-        frame->rax = proc_mmap(frame->rcx, (u32)frame->rdx, (u32)frame->rsi);
-        break;
-    case SYS_ARCH_PRCTL:
-        frame->rax = sys_arch_prctl((u32)frame->rbx, frame->rcx);
-        break;
-    case SYS_GETPID:
-        frame->rax = sys_getpid();
+    case SYS_UNAME:
+        frame->rax = sys_uname((utsname_t *)frame->rdi);
         break;
     case SYS_GETUID:
         frame->rax = sys_getuid();
         break;
-    case SYS_UNAME:
-        frame->rax = sys_uname((utsname_t *)frame->rbx);
-        break;
-    default:
-        frame->rax = (u64)-1;
-        break;
-    }
-}
-
-void syscall64_dispatch(struct interrupt_frame *frame)
-{
-    switch ((u32)frame->rax) {
-    case SYS64_READ:
-        frame->rax = sys_read((u32)frame->rdi, (u8 *)frame->rsi, (u32)frame->rdx);
-        break;
-    case SYS64_WRITE:
-        frame->rax = sys_write((u32)frame->rdi, (const u8 *)frame->rsi, (u32)frame->rdx);
-        break;
-    case SYS64_CLOSE:
-        sys_close((u32)frame->rdi);
-        frame->rax = 0U;
-        break;
-    case SYS64_MMAP:
-        frame->rax = sys_mmap64(frame->rdi, frame->rsi, (u32)frame->rdx,
-                                 (u32)frame->r10, (u32)frame->r8, frame->r9);
-        break;
-    case SYS64_MPROTECT:
-        frame->rax = sys_mprotect(frame->rdi, frame->rsi, (u32)frame->rdx);
-        break;
-    case SYS64_MUNMAP:
-        frame->rax = sys_munmap(frame->rdi, frame->rsi);
-        break;
-    case SYS64_BRK:
-        frame->rax = proc_brk(frame->rdi);
-        break;
-    case SYS64_IOCTL:
-        frame->rax = sys_ioctl();
-        break;
-    case SYS64_WRITEV:
-        frame->rax = sys_writev((u32)frame->rdi, (const iovec_t *)frame->rsi, (u32)frame->rdx);
-        break;
-    case SYS64_UNAME:
-        frame->rax = sys_uname((utsname_t *)frame->rdi);
-        break;
-    case SYS64_GETPID:
-        frame->rax = sys_getpid();
-        break;
-    case SYS64_GETUID:
-        frame->rax = sys_getuid();
-        break;
-    case SYS64_ARCH_PRCTL:
+    case SYS_ARCH_PRCTL:
         frame->rax = sys_arch_prctl((u32)frame->rdi, frame->rsi);
         break;
-    case SYS64_SET_TID_ADDRESS:
+    case SYS_SET_TID_ADDRESS:
         frame->rax = sys_set_tid_address(frame->rdi);
         break;
-    case SYS64_EXIT:
-    case SYS64_EXIT_GROUP:
+    case SYS_EXIT_GROUP:
         proc_exit((u32)frame->rdi);
         break;
     default:

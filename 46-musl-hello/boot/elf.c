@@ -110,21 +110,23 @@ u64 elf_load_process(const u8 *data, u32 size, u32 pml4_phys, u64 *out_brk_start
 #define AT_SECURE 23ULL
 
 #define USTACK_AUX_PAIRS 7U
+#define USTACK_ARGV_MAX  8U
 
-u64 elf_setup_stack(u32 pml4_phys, const char *argv0, u64 entry,
+u64 elf_setup_stack(u32 pml4_phys, char *const argv[], u32 argc, u64 entry,
                      u64 phdr, u32 phnum, u32 phentsize)
 {
-    u64  top       = PROC_USTACK_TOP;
+    u64  top      = PROC_USTACK_TOP;
     u64  va;
-    u8  *top_page  = 0;
-    u32  argv0_len = 0U;
+    u8  *top_page = 0;
     u64  sp_off;
-    u64  argv0_off;
+    u64  argv_off[USTACK_ARGV_MAX];
     u64  random_off;
     u64 *frame_words;
     u32  nwords;
     u32  i;
     u32  k;
+
+    if (argc > USTACK_ARGV_MAX) argc = USTACK_ARGV_MAX;
 
     for (va = top - (u64)PROC_USTACK_PAGES * 0x1000ULL; va < top; va += 0x1000ULL) {
         u32 frame = page_alloc();
@@ -136,20 +138,25 @@ u64 elf_setup_stack(u32 pml4_phys, const char *argv0, u64 entry,
         if (va == top - 0x1000ULL) top_page = fdst;
     }
 
-    while (argv0[argv0_len]) argv0_len++;
-    argv0_len++;
-
     sp_off = 0x1000ULL;
 
     sp_off -= 16ULL;
     random_off = sp_off;
     for (k = 0U; k < 16U; k++) top_page[random_off + k] = (u8)(0x5AU + k);
 
-    sp_off -= (u64)argv0_len;
-    argv0_off = sp_off;
-    for (k = 0U; k < argv0_len; k++) top_page[argv0_off + k] = (u8)argv0[k];
+    for (i = 0U; i < argc; i++) {
+        u32 len = 0U;
+        while (argv[i][len]) len++;
+        len++;
 
-    nwords  = 4U;
+        sp_off -= (u64)len;
+        argv_off[i] = sp_off;
+        for (k = 0U; k < len; k++) top_page[sp_off + k] = (u8)argv[i][k];
+    }
+
+    nwords  = 1U;
+    nwords += argc;
+    nwords += 2U;
     nwords += (USTACK_AUX_PAIRS + 1U) * 2U;
 
     sp_off &= ~0xFULL;
@@ -157,8 +164,8 @@ u64 elf_setup_stack(u32 pml4_phys, const char *argv0, u64 entry,
 
     frame_words = (u64 *)(top_page + sp_off);
     i = 0U;
-    frame_words[i++] = 1ULL;
-    frame_words[i++] = top - 0x1000ULL + argv0_off;
+    frame_words[i++] = (u64)argc;
+    for (k = 0U; k < argc; k++) frame_words[i++] = top - 0x1000ULL + argv_off[k];
     frame_words[i++] = 0ULL;
     frame_words[i++] = 0ULL;
     frame_words[i++] = AT_PHDR;   frame_words[i++] = phdr;

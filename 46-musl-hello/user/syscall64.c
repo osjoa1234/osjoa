@@ -104,9 +104,13 @@ void start_main(unsigned long *stack)
     writes("syscall64: argc = 0x");
     write_hex((unsigned long)argc);
     writes("\n");
-    writes("syscall64: argv[0] = ");
-    writes(argv[0]);
-    writes("\n");
+    for (i = 0; i < argc; i++) {
+        writes("syscall64: argv[");
+        write_hex((unsigned long)i);
+        writes("] = ");
+        writes(argv[i]);
+        writes("\n");
+    }
 
     envp = (unsigned long *)(argv + argc + 1);
     i = 0;

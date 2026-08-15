@@ -34,7 +34,7 @@ typedef struct {
 u64 elf_load(const u8 *data, u32 size);
 u64 elf_load_process(const u8 *data, u32 size, u32 pml4_phys, u64 *out_brk_start,
                       u64 *out_phdr, u32 *out_phnum, u32 *out_phentsize);
-u64 elf_setup_stack(u32 pml4_phys, const char *argv0, u64 entry,
+u64 elf_setup_stack(u32 pml4_phys, char *const argv[], u32 argc, u64 entry,
                      u64 phdr, u32 phnum, u32 phentsize);
 
 #endif

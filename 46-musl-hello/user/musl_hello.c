@@ -9,8 +9,11 @@ int main(int argc, char **argv)
     char *buf;
     char *big;
     struct utsname uts;
+    int i;
 
-    printf("musl_hello: hello from real musl -- argc=%d argv[0]=%s\n", argc, argv[0]);
+    printf("musl_hello: hello from real musl -- argc=%d\n", argc);
+    for (i = 0; i < argc; i++)
+        printf("musl_hello: argv[%d] = %s\n", i, argv[i]);
 
     buf = malloc(64);
     strcpy(buf, "musl_hello: brk malloc ok");

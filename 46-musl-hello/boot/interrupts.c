@@ -228,13 +228,6 @@ void interrupt_dispatch(struct interrupt_frame *frame)
         return;
     }
 
-    if (frame->vector == 0x80U) {
-        __asm__ volatile ("sti");
-        syscall_dispatch(frame);
-        __asm__ volatile ("cli");
-        return;
-    }
-
     console_set_color(0x0DU);
     console_printf("interrupt 0x%02X\n", (u32)frame->vector);
 }
@@ -250,8 +243,6 @@ void interrupts_init(void)
 
     idt_descriptor.limit = (u16)(sizeof(idt) - 1U);
     idt_descriptor.base = (u64)&idt[0];
-
-    idt_set_entry(0x80U, (u64)interrupt_stub_table[0x80], selector, 0xEEU);
 
     pic_remap(0x20U, 0x28U);
     idt_load();
