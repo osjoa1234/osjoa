@@ -1,0 +1,9 @@
+init
+hello
+hello2
+brk
+mmap
+tls
+syscall64
+musl_hello
+signal
