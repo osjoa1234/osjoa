@@ -92,7 +92,7 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 45 | `45-argv-auxv` | musl 없이 진짜 libc가 기대하는 초기 유저 스택(`argc`/`argv`/`envp`/`auxv`) 구성, `PROC_USTACK_TOP` 재배치, ELF 세그먼트 페이지 정렬 버그 수정, SSE(CR4.OSFXSR) 활성화, 셸의 다중 인자 파싱 + `execve` argv 배열 전달 |
 | 46 | `46-musl-hello` | musl-static으로 빌드한 첫 외부 바이너리를 initrd에 넣어 실행 검증 — brk+mmap+tls+syscall64+argv-auxv 모두 갖춘 뒤 검증 |
 | 47 | `47-signal` | per-process 시그널 핸들러 테이블, 유저 공간 트램폴린 + `sigreturn`, Ctrl+C→SIGINT |
-| 48 | `48-pipe` | `pipe(42)`, `dup2(63)` — 셸 파이프(`\|`)와 리다이렉션(`>`) |
+| 48 | `48-pipe` | `pipe(22)`, `dup2(33)` — 셸 파이프(`\|`); 파일 `>` 리다이렉션은 쓰기 가능한 FS가 없어 다음 단계로 미룸 |
 | 49 | `49-busybox-sh` | `chdir`, `access`, ioctl stub 추가 — busybox sh를 initrd에서 실행 |
 | 50 | `50-disk-fs` | ATA PIO 디스크 읽기, FAT16/ext2 마운트, VFS 디스크 백엔드 연결 |
 | 51 | `51-vfs-ext` | `getdents`, `mkdir`, `unlink` — `ls`/`rm`이 실제 디스크 FS에서 동작 |
