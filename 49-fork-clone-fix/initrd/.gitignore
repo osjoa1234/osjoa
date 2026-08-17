@@ -9,4 +9,3 @@ musl_hello
 signal
 pipe
 forkclone
-busybox

@@ -61,8 +61,6 @@ USERFORKCLONE := $(BUILD)/forkclone
 FORKCLONEOBJ  := $(BUILD)/forkclone_user.o
 CLONEOBJ     := $(BUILD)/clone_user.o
 
-BUSYBOXSRC   := /usr/bin/busybox
-
 CFLAGS       := -m64 -mcmodel=kernel -std=c11 -O2 -Wall -Wextra -ffreestanding \
                 -fno-builtin -fno-pic -fno-pie -fno-stack-protector -mno-red-zone \
                 -mno-sse -mno-sse2 -mno-mmx
@@ -75,7 +73,7 @@ RUNNOGUI     := -display none -serial none -monitor none -debugcon stdio \
 all: $(ISO)
 
 tools:
-	$(MAKE) -C .. setup-grub setup-c32 setup-musl setup-busybox
+	$(MAKE) -C .. setup-grub setup-c32 setup-musl
 
 $(ENTRYOBJ): boot/entry.asm | $(BUILD)
 	$(ASM) -f elf64 $< -o $@
@@ -226,7 +224,7 @@ $(USERPIPE): $(PIPEUOBJ) $(CLONEOBJ) user/user.ld
 $(USERFORKCLONE): $(FORKCLONEOBJ) $(CLONEOBJ) user/user.ld
 	$(LD) -m elf_x86_64 -T user/user.ld -nostdlib -o $@ $(FORKCLONEOBJ) $(CLONEOBJ)
 
-$(INITRAMFS): $(USERINIT) $(USERHELLO) $(USERHELLO2) $(USERBRK) $(USERMMAP) $(USERTLS) $(USERSYSCALL64) $(USERMUSLHELLO) $(USERSIGNAL) $(USERPIPE) $(USERFORKCLONE) $(BUSYBOXSRC) | $(BUILD)
+$(INITRAMFS): $(USERINIT) $(USERHELLO) $(USERHELLO2) $(USERBRK) $(USERMMAP) $(USERTLS) $(USERSYSCALL64) $(USERMUSLHELLO) $(USERSIGNAL) $(USERPIPE) $(USERFORKCLONE) | $(BUILD)
 	cp $(USERINIT) $(INITRDDIR)/init
 	cp $(USERHELLO) $(INITRDDIR)/hello
 	cp $(USERHELLO2) $(INITRDDIR)/hello2
@@ -238,7 +236,6 @@ $(INITRAMFS): $(USERINIT) $(USERHELLO) $(USERHELLO2) $(USERBRK) $(USERMMAP) $(US
 	cp $(USERSIGNAL) $(INITRDDIR)/signal
 	cp $(USERPIPE) $(INITRDDIR)/pipe
 	cp $(USERFORKCLONE) $(INITRDDIR)/forkclone
-	cp $(BUSYBOXSRC) $(INITRDDIR)/busybox
 	cd $(INITRDDIR) && find . | sort | cpio -o --format=newc > ../$(INITRAMFS) 2>/dev/null
 
 $(ISO): $(KERNELELF) $(INITRAMFS) grub/grub.cfg | $(BUILD)
@@ -260,4 +257,4 @@ run-nogui: $(ISO)
 
 clean:
 	rm -rf $(BUILD)
-	rm -f $(INITRDDIR)/init $(INITRDDIR)/hello $(INITRDDIR)/hello2 $(INITRDDIR)/brk $(INITRDDIR)/mmap $(INITRDDIR)/tls $(INITRDDIR)/syscall64 $(INITRDDIR)/musl_hello $(INITRDDIR)/signal $(INITRDDIR)/pipe $(INITRDDIR)/forkclone $(INITRDDIR)/busybox
+	rm -f $(INITRDDIR)/init $(INITRDDIR)/hello $(INITRDDIR)/hello2 $(INITRDDIR)/brk $(INITRDDIR)/mmap $(INITRDDIR)/tls $(INITRDDIR)/syscall64 $(INITRDDIR)/musl_hello $(INITRDDIR)/signal $(INITRDDIR)/pipe $(INITRDDIR)/forkclone

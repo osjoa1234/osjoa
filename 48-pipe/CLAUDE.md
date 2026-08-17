@@ -6,7 +6,7 @@
 
 ## 범위: `>` 파일 리다이렉션은 포함하지 않는다
 
-이 OS에는 아직 쓰기 가능한 파일시스템이 없다 — 마운트된 건 `initrd` 하나뿐이고 그마저도 `vfs_ops.write`가 NULL, 콘솔은 fd 번호로 직접 열릴 뿐 마운트 테이블에 없다(`vfs_mount`로 경로 매핑된 적이 없음). 그래서 `open("파일", O_WRONLY|...)`가 성공할 대상이 아예 없다. `>` 리다이렉션을 진짜로 동작시키려면 최소 램 기반 tmpfs 같은 쓰기 가능한 백엔드가 별도로 필요하고, 이건 pipe와는 다른 개념이라 `[[one-concept-per-step]]` 원칙상 여기 넣지 않았다 — 나중 단계(예정된 `50-disk-fs` 근처)로 미룬다. 48은 `cmd1 | cmd2 | ...` 파이프라인만 다룬다.
+이 OS에는 아직 쓰기 가능한 파일시스템이 없다 — 마운트된 건 `initrd` 하나뿐이고 그마저도 `vfs_ops.write`가 NULL, 콘솔은 fd 번호로 직접 열릴 뿐 마운트 테이블에 없다(`vfs_mount`로 경로 매핑된 적이 없음). 그래서 `open("파일", O_WRONLY|...)`가 성공할 대상이 아예 없다. `>` 리다이렉션을 진짜로 동작시키려면 최소 램 기반 tmpfs 같은 쓰기 가능한 백엔드가 별도로 필요하고, 이건 pipe와는 다른 개념이라 `[[one-concept-per-step]]` 원칙상 여기 넣지 않았다 — 나중 단계(예정된 `51-disk-fs` 근처)로 미룬다. 48은 `cmd1 | cmd2 | ...` 파이프라인만 다룬다.
 
 ## 핵심 개념
 
@@ -98,5 +98,5 @@ process 2 exited: code=0
 - `vfs_read`가 여전히 `ops->read==NULL`을 가드하지 않는다 — 이번엔 커널이 read/write 끝을 절대 혼동하지 않도록 배선해서 피해갔지만, 원칙적으로는 `vfs_write`처럼 `if (!f->ops->read) return 0U;`를 넣는 게 안전하다.
 - 파이프 읽기도 47에서 남긴 "진짜 블로킹 syscall 도중의 `Ctrl+C`" 힌트와 같은 한계를 그대로 안고 있다 — `pipe_read`/`pipe_write`의 `thread_park()` 루프는 `sig_pending`을 확인하지 않는다. `con_read`와 함께 나중에 EINTR 조기 리턴을 넣을 때 같이 고칠 수 있다.
 - 쓰기 쪽이 막힌 채로(`read_refs==0`) 계속 쓰면 지금은 조용히 짧은 반환만 한다 — 진짜 유닉스처럼 `SIGPIPE`를 보내려면 `pipe_write`가 `signal_raise_current(SIGPIPE)`를 호출하도록 확장해야 한다(`SIGPIPE` 상수 자체가 아직 없다).
-- `>` 파일 리다이렉션은 쓰기 가능한 파일시스템이 생겨야 의미가 있다 — tmpfs든 `50-disk-fs`든, 그 단계에서 셸의 `split_pipeline`과 비슷한 자리에 `>` 토큰 처리를 추가하면 된다.
+- `>` 파일 리다이렉션은 쓰기 가능한 파일시스템이 생겨야 의미가 있다 — tmpfs든 `51-disk-fs`든, 그 단계에서 셸의 `split_pipeline`과 비슷한 자리에 `>` 토큰 처리를 추가하면 된다.
 - `sys_exit`/`sys_exec`(`user/init.c`, 그리고 다른 `user/*.c`의 동일 패턴)는 이번에 고친 `sys_close`와 같은 잠재적 `rax` 클로버 누락을 안고 있다 — 지금은 반복 호출되지 않아 드러나지 않을 뿐이다.
