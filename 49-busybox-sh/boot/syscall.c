@@ -158,6 +158,8 @@ static u32 sys_fstat(u32 fd, stat_t *buf)
     return 0U;
 }
 
+#define CLONE_VM 0x00000100U
+
 #define ARCH_SET_GS 0x1001U
 #define ARCH_SET_FS 0x1002U
 #define ARCH_GET_FS 0x1003U
@@ -350,9 +352,14 @@ void syscall_dispatch(struct interrupt_frame *frame)
         ctx.r14      = frame->r14;
         ctx.r15      = frame->r15;
         ctx.rip      = frame->rip;
-        ctx.user_rsp = frame->rdi;
         ctx.rflags   = frame->rflags;
-        frame->rax   = proc_clone(&ctx);
+        if (frame->rdi & CLONE_VM) {
+            ctx.user_rsp = frame->rdi;
+            frame->rax   = proc_clone(&ctx);
+        } else {
+            ctx.user_rsp = frame->user_rsp;
+            frame->rax   = proc_fork(&ctx);
+        }
         break;
     }
     case SYS_FORK: {

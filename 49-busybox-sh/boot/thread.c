@@ -44,7 +44,7 @@ void threads_init(u64 idle_kstack_top)
     scheduler_ready  = 1U;
 }
 
-thread_t *thread_create_with_data(thread_fn_t fn, void *data)
+thread_t *thread_create_with_data(thread_fn_t fn, void *data, u32 pd, u64 fs_base)
 {
     thread_t *t;
     u8       *stack;
@@ -74,8 +74,8 @@ thread_t *thread_create_with_data(thread_fn_t fn, void *data)
     t->state      = THREAD_RUNNING;
     t->wake_tick  = 0U;
     t->kstack_top = (u64)(stack + THREAD_STACK_SIZE);
-    t->pd         = 0U;
-    t->fs_base    = 0U;
+    t->pd         = pd;
+    t->fs_base    = fs_base;
     t->user_data  = data;
     t->proc_next  = 0;
 
@@ -91,7 +91,7 @@ thread_t *thread_create_with_data(thread_fn_t fn, void *data)
 
 thread_t *thread_create(thread_fn_t fn)
 {
-    return thread_create_with_data(fn, 0);
+    return thread_create_with_data(fn, 0, 0U, 0ULL);
 }
 
 static void wake_sleeping(void)
