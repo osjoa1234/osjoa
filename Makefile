@@ -4,10 +4,11 @@ C32_PKGS  := gcc-multilib g++-multilib
 GRUB_PKGS := xorriso grub-pc-bin grub-common
 INIT_PKGS := cpio
 MUSL_PKGS := musl-tools
+BUSYBOX_PKGS := busybox-static
 
-.PHONY: setup setup-core setup-fat setup-c32 setup-grub setup-init setup-musl apt-update
+.PHONY: setup setup-core setup-fat setup-c32 setup-grub setup-init setup-musl setup-busybox apt-update
 
-setup: setup-core setup-fat setup-c32 setup-grub setup-init setup-musl
+setup: setup-core setup-fat setup-c32 setup-grub setup-init setup-musl setup-busybox
 
 setup-core: apt-update
 	sudo apt install -y $(CORE_PKGS)
@@ -26,6 +27,9 @@ setup-init: apt-update
 
 setup-musl: apt-update
 	sudo apt install -y $(MUSL_PKGS)
+
+setup-busybox: apt-update
+	sudo apt install -y $(BUSYBOX_PKGS)
 
 apt-update:
 	sudo apt update
