@@ -4,7 +4,9 @@ C32_PKGS  := gcc-multilib g++-multilib
 GRUB_PKGS := xorriso grub-pc-bin grub-common
 INIT_PKGS := cpio
 MUSL_PKGS := musl-tools
-BUSYBOX_PKGS := busybox-static
+
+BUSYBOX_URL   := https://www.busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox
+BUSYBOX_CACHE := $(HOME)/.cache/custom-os/busybox-musl
 
 .PHONY: setup setup-core setup-fat setup-c32 setup-grub setup-init setup-musl setup-busybox apt-update
 
@@ -28,8 +30,10 @@ setup-init: apt-update
 setup-musl: apt-update
 	sudo apt install -y $(MUSL_PKGS)
 
-setup-busybox: apt-update
-	sudo apt install -y $(BUSYBOX_PKGS)
+setup-busybox:
+	mkdir -p $(dir $(BUSYBOX_CACHE))
+	curl -fL -o $(BUSYBOX_CACHE) $(BUSYBOX_URL)
+	chmod +x $(BUSYBOX_CACHE)
 
 apt-update:
 	sudo apt update

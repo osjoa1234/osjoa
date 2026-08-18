@@ -33,6 +33,29 @@ static u32 sys_open(const char *path)
     return (u32)-1U;
 }
 
+static u32 sys_access(const char *path)
+{
+    vfs_file_t *f = vfs_open(path);
+
+    if (!f) return (u32)-1U;
+    vfs_close(f);
+    return 0U;
+}
+
+static u32 sys_chdir(const char *path)
+{
+    (void)path;
+    return 0U;
+}
+
+static u32 sys_getcwd(char *buf, u32 size)
+{
+    if (size < 2U) return (u32)-1U;
+    buf[0] = '/';
+    buf[1] = '\0';
+    return 2U;
+}
+
 static u32 sys_read(u32 fd, u8 *buf, u32 len)
 {
     process_t *p = (process_t *)thread_current()->user_data;
@@ -101,28 +124,6 @@ static u32 sys_dup2(u32 oldfd, u32 newfd)
     return newfd;
 }
 
-static u32 sys_access(const char *path)
-{
-    vfs_file_t *f = vfs_open(path);
-    if (!f) return (u32)-1U;
-    vfs_close(f);
-    return 0U;
-}
-
-static u32 sys_chdir(const char *path)
-{
-    (void)path;
-    return 0U;
-}
-
-static u32 sys_getcwd(char *buf, u64 size)
-{
-    if (size < 2U) return 0U;
-    buf[0] = '/';
-    buf[1] = '\0';
-    return 2U;
-}
-
 static u32 sys_mprotect(u64 addr, u64 length, u32 prot)
 {
     (void)addr;
@@ -157,8 +158,6 @@ static u32 sys_fstat(u32 fd, stat_t *buf)
 
     return 0U;
 }
-
-#define CLONE_VM 0x00000100U
 
 #define ARCH_SET_GS 0x1001U
 #define ARCH_SET_FS 0x1002U
@@ -291,12 +290,6 @@ void syscall_dispatch(struct interrupt_frame *frame)
     case SYS_ACCESS:
         frame->rax = sys_access((const char *)frame->rdi);
         break;
-    case SYS_CHDIR:
-        frame->rax = sys_chdir((const char *)frame->rdi);
-        break;
-    case SYS_GETCWD:
-        frame->rax = sys_getcwd((char *)frame->rdi, frame->rsi);
-        break;
     case SYS_RT_SIGACTION:
         frame->rax = sys_rt_sigaction((u32)frame->rdi, (const sigaction_t *)frame->rsi,
                                        (sigaction_t *)frame->rdx, frame->r10);
@@ -352,14 +345,9 @@ void syscall_dispatch(struct interrupt_frame *frame)
         ctx.r14      = frame->r14;
         ctx.r15      = frame->r15;
         ctx.rip      = frame->rip;
+        ctx.user_rsp = frame->rdi;
         ctx.rflags   = frame->rflags;
-        if (frame->rdi & CLONE_VM) {
-            ctx.user_rsp = frame->rdi;
-            frame->rax   = proc_clone(&ctx);
-        } else {
-            ctx.user_rsp = frame->user_rsp;
-            frame->rax   = proc_fork(&ctx);
-        }
+        frame->rax   = proc_clone(&ctx);
         break;
     }
     case SYS_FORK: {
@@ -399,6 +387,12 @@ void syscall_dispatch(struct interrupt_frame *frame)
         break;
     case SYS_GETUID:
         frame->rax = sys_getuid();
+        break;
+    case SYS_GETCWD:
+        frame->rax = sys_getcwd((char *)frame->rdi, (u32)frame->rsi);
+        break;
+    case SYS_CHDIR:
+        frame->rax = sys_chdir((const char *)frame->rdi);
         break;
     case SYS_ARCH_PRCTL:
         frame->rax = sys_arch_prctl((u32)frame->rdi, frame->rsi);

@@ -55,18 +55,6 @@ static process_t *find_zombie_child(u32 parent_pid)
     return 0;
 }
 
-static u32 has_any_child(u32 parent_pid)
-{
-    u32 i;
-
-    for (i = 0U; i < PROC_MAX; i++) {
-        if (proc_table[i].state != PROC_FREE &&
-            proc_table[i].parent_pid == parent_pid)
-            return 1U;
-    }
-    return 0U;
-}
-
 static void proc_run_trampoline(void)
 {
     process_t *p = (process_t *)thread_current()->user_data;
@@ -138,6 +126,7 @@ u32 proc_spawn(const char *name)
     t = thread_create_with_data(proc_run_trampoline, p, pml4_phys, 0ULL);
     if (!t) { p->state = PROC_FREE; return (u32)-1U; }
 
+    t->proc_next = 0;
     p->threads   = t;
 
     return p->pid;
@@ -171,9 +160,11 @@ u32 proc_fork(const fork_resume_t *ctx)
     child->sig_blocked = parent->sig_blocked;
     for (j = 0U; j < NSIG; j++) child->sig_handler[j] = parent->sig_handler[j];
 
-    t = thread_create_with_data(fork_child_trampoline, child, child_pml4_phys, thread_current()->fs_base);
+    t = thread_create_with_data(fork_child_trampoline, child,
+                                 child_pml4_phys, thread_current()->fs_base);
     if (!t) { child->state = PROC_FREE; return (u32)-1U; }
 
+    t->proc_next  = 0;
     child->threads = t;
 
     return child->pid;
@@ -311,6 +302,18 @@ u32 proc_clone(const fork_resume_t *ctx)
     last->proc_next = t;
 
     return t->id;
+}
+
+static int has_any_child(u32 parent_pid)
+{
+    u32 i;
+
+    for (i = 0U; i < PROC_MAX; i++) {
+        if (proc_table[i].state != PROC_FREE &&
+            proc_table[i].parent_pid == parent_pid)
+            return 1;
+    }
+    return 0;
 }
 
 u32 proc_wait(u32 pid, u32 *exit_code)

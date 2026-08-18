@@ -74,10 +74,10 @@ void phys_mem_init(u64 mmap_addr, u32 mmap_length, u32 kernel_end)
 
 void phys_mem_reserve(u32 start, u32 end)
 {
-    u32 first = start / PAGE_SIZE;
-    u32 last  = (end + PAGE_SIZE - 1U) / PAGE_SIZE;
+    u32 s = start & ~(PAGE_SIZE - 1U);
+    u32 e = (end + PAGE_SIZE - 1U) & ~(PAGE_SIZE - 1U);
 
-    range_mark_used(first, last);
+    range_mark_used(s / PAGE_SIZE, e / PAGE_SIZE);
 }
 
 u32 page_alloc(void)

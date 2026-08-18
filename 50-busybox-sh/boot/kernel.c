@@ -80,16 +80,17 @@ void kernel_main(u32 magic, u32 phys_mbi)
         paging_init(mbi->mmap_addr + KERNEL_OFFSET, mbi->mmap_length);
         phys_mem_init(mbi->mmap_addr + KERNEL_OFFSET, mbi->mmap_length, kend_phys);
 
-        if (mbi->flags & (1U << 3U) && mbi->mods_count > 0U) {
-            const struct multiboot_mod *mod =
-                (const struct multiboot_mod *)(u64)(mbi->mods_addr + KERNEL_OFFSET);
-            phys_mem_reserve(mod[0].mod_start, mod[0].mod_end);
-        }
-
         console_set_color(0x0F);
         console_printf("phys mem: %u free pages (%uMB usable)\n",
                        phys_mem_free_count(),
                        phys_mem_free_count() / 256U);
+    }
+
+    if (mbi->flags & (1U << 3U)) {
+        const struct multiboot_mod *mod0 =
+            (const struct multiboot_mod *)(u64)(mbi->mods_addr + KERNEL_OFFSET);
+
+        phys_mem_reserve(mod0[0].mod_start, mod0[0].mod_end);
     }
 
     interrupts_init();

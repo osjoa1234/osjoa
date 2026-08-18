@@ -21,22 +21,14 @@ static long sys_arch_prctl(unsigned int code, unsigned long addr)
     return ret;
 }
 
-static long sys_clone_fork(void)
+static long sys_fork(void)
 {
-    long          ret;
-    unsigned long tidbuf;
-    register unsigned long r10 __asm__("r10") = (unsigned long)&tidbuf;
-
-    __asm__ volatile (
-        "syscall"
-        : "=a"(ret)
-        : "a"(56L), "D"(0x1200011UL), "S"(0UL), "d"(0UL), "r"(r10)
-        : "rcx", "r11", "memory"
-    );
+    long ret;
+    __asm__ volatile ("syscall" : "=a"(ret) : "a"(57L) : "rcx", "r11", "memory");
     return ret;
 }
 
-static long sys_wait4(long pid, unsigned int *status)
+static long sys_wait4(unsigned int pid, unsigned int *status)
 {
     long ret;
     __asm__ volatile ("syscall" : "=a"(ret) : "a"(61L), "D"(pid), "S"(status) : "rcx", "r11", "memory");
@@ -73,12 +65,16 @@ void _start(void)
     long          rc;
     unsigned long fs_readback;
     unsigned int  status;
-    long          waited;
+    long          wpid;
 
     tls_block[0] = 0x1234567890ABCDEFUL;
     sys_arch_prctl(ARCH_SET_FS, (unsigned long)tls_block);
 
-    rc = sys_clone_fork();
+    rc = sys_fork();
+    writes("forkclone: fork rc = 0x");
+    write_hex((unsigned long)rc);
+    writes("\n");
+
     if (rc == 0) {
         __asm__ volatile ("mov %%fs:0, %0" : "=r"(fs_readback));
         writes("forkclone: child fs:0 = 0x");
@@ -88,22 +84,19 @@ void _start(void)
         for (;;) {}
     }
 
-    writes("forkclone: parent clone rc = 0x");
-    write_hex((unsigned long)rc);
-    writes("\n");
-
-    waited = sys_wait4(-1L, &status);
+    status = 0xFFFFFFFFU;
+    wpid = sys_wait4((unsigned int)-1, &status);
     writes("forkclone: wait4 pid = 0x");
-    write_hex((unsigned long)waited);
+    write_hex((unsigned long)wpid);
     writes(" status = 0x");
     write_hex((unsigned long)status);
     writes(" exitcode = 0x");
-    write_hex((unsigned long)((status >> 8) & 0xFFU));
+    write_hex(((unsigned long)status >> 8) & 0xFFUL);
     writes("\n");
 
-    waited = sys_wait4(-1L, &status);
+    wpid = sys_wait4((unsigned int)-1, &status);
     writes("forkclone: second wait4 (no children) returned = 0x");
-    write_hex((unsigned long)waited);
+    write_hex((unsigned long)wpid);
     writes("\n");
 
     sys_exit(0U);

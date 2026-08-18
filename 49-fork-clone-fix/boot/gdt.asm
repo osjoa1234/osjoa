@@ -63,10 +63,11 @@ enter_user_mode_fork:
     mov fs, ax
     mov gs, ax
 
-    mov ecx, 0xC0000100
-    mov rax, rsi
-    mov rdx, rax
+    mov r10, rsi
+    mov eax, r10d
+    mov rdx, r10
     shr rdx, 32
+    mov ecx, 0xC0000100
     wrmsr
 
     push qword 0x23

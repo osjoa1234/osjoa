@@ -60,8 +60,7 @@ PIPEUOBJ     := $(BUILD)/pipe_user.o
 USERFORKCLONE := $(BUILD)/forkclone
 FORKCLONEOBJ  := $(BUILD)/forkclone_user.o
 CLONEOBJ     := $(BUILD)/clone_user.o
-
-BUSYBOXSRC   := /usr/bin/busybox
+BUSYBOXSRC   := $(HOME)/.cache/custom-os/busybox-musl
 
 CFLAGS       := -m64 -mcmodel=kernel -std=c11 -O2 -Wall -Wextra -ffreestanding \
                 -fno-builtin -fno-pic -fno-pie -fno-stack-protector -mno-red-zone \
