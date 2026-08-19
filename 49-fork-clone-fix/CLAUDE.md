@@ -20,7 +20,7 @@
 
 `enter_user_mode`(프로세스 최초 시작점)는 `fs_base=0`이 정확히 맞는 값이라 원래도 문제가 없었지만, 리눅스 관례와 일관되게 `mov fs, ax`의 `ax`를 0x23(ds/es/gs와 공유하던 값)이 아니라 0(널)으로 바꿔뒀다 — 여기는 유일하게 FS 셀렉터를 로드하는 지점으로 남기고, 그 이후 어떤 경로(fork, exec, context switch)도 FS 셀렉터를 다시 건드리지 않는다. `enter_user_mode_fork`에 추가했던 `fs_base` 인자(`process.c`의 `fork_child_trampoline`/`clone_fork_trampoline` 호출부)는 더 이상 필요 없어 제거했다.
 
-이 버그를 고치는 김에, `thread_create_with_data`가 스케줄 큐에 스레드를 연결한 **뒤에**야 호출자가 `t->pd`/`t->fs_base`를 채우던 구조도 같이 정리했다(`thread.c`/`thread.h`) — 큐 연결 순간부터 그 스레드는 스케줄될 수 있는데, `pd`/`fs_base`가 아직 기본값(0)일 때 타이머 인터럽트가 끼어들면 잘못된 값으로 활성화될 수 있는 레이스였다. `thread_create_with_data(fn, data, pd, fs_base)`로 파라미터화해서 큐에 넣기 전에 확정하도록 바꿨다.
+이 버그를 고치는 김에, `thread_create_with_data`가 스케줄 큐에 스레드를 연결한 **뒤에**야 호출자가 `t->pml4_phys`/`t->fs_base`를 채우던 구조도 같이 정리했다(`thread.c`/`thread.h`) — 큐 연결 순간부터 그 스레드는 스케줄될 수 있는데, `pml4_phys`/`fs_base`가 아직 기본값(0)일 때 타이머 인터럽트가 끼어들면 잘못된 값으로 활성화될 수 있는 레이스였다. `thread_create_with_data(fn, data, pml4_phys, fs_base)`로 파라미터화해서 큐에 넣기 전에 확정하도록 바꿨다. 필드 이름은 원래 32비트 2단계 페이징 시절의 `pd`(page directory)를 그대로 쓰고 있었는데, `39-paging-thread-64`에서 4단계 페이징으로 전환한 뒤 `paging.c`/`paging.h`는 전부 `pml4_phys`로 불렀지만 `thread.h`/`thread.c`만 리네임이 안 된 채 남아 있었다 — 이번에 `pml4_phys`로 맞췄다.
 
 ## 버그 2: `proc_wait`가 리눅스 wait status 인코딩을 안 지킴
 
@@ -75,10 +75,10 @@ process 1 exited: code=0
 
 | 파일 | 상태 | 설명 |
 |------|------|------|
-| `boot/thread.h` | 수정 | `thread_create_with_data(fn, data, pd, fs_base)` — 스케줄 큐 연결 전에 `pd`/`fs_base`를 확정하도록 파라미터화 |
-| `boot/thread.c` | 수정 | `thread_create_with_data` 본문이 파라미터로 받은 `pd`/`fs_base`를 큐 연결 전에 채움(레이스 제거); `thread_create`는 0으로 위임 |
+| `boot/thread.h` | 수정 | `thread_create_with_data(fn, data, pml4_phys, fs_base)` — 스케줄 큐 연결 전에 `pml4_phys`/`fs_base`를 확정하도록 파라미터화; `thread_t.pd` 필드를 `pml4_phys`로 리네임(`paging.c`의 4단계 페이징 네이밍과 통일) |
+| `boot/thread.c` | 수정 | `thread_create_with_data` 본문이 파라미터로 받은 `pml4_phys`/`fs_base`를 큐 연결 전에 채움(레이스 제거); `thread_create`는 0으로 위임 |
 | `boot/gdt.asm` | 수정 | `enter_user_mode_fork`의 `mov fs,ax` 삭제(FS 셀렉터를 아예 안 건드려 `activate_thread`가 WRMSR해둔 `fs_base`를 보존); `enter_user_mode`는 `mov fs,ax`의 `ax`를 0x23 대신 0(널)으로 — 리눅스 관례와 일관되게 FS 셀렉터를 로드하는 유일한 지점으로 남김 |
-| `boot/process.c` | 수정 | `enter_user_mode_fork` 시그니처에서 `fs_base` 인자 제거(더 이상 불필요); `proc_spawn`/`proc_fork`/`proc_clone`이 `thread_create_with_data`에 `pd`/`fs_base`를 직접 전달; `proc_wait`가 wait4 status를 `<<8`로 인코딩하고 `pid==-1` 대기 시 자식이 없으면 즉시 리턴하는 `has_any_child()` 추가 |
+| `boot/process.c` | 수정 | `enter_user_mode_fork` 시그니처에서 `fs_base` 인자 제거(더 이상 불필요); `proc_spawn`/`proc_fork`/`proc_clone`이 `thread_create_with_data`에 `pml4_phys`/`fs_base`를 직접 전달; `proc_wait`가 wait4 status를 `<<8`로 인코딩하고 `pid==-1` 대기 시 자식이 없으면 즉시 리턴하는 `has_any_child()` 추가 |
 | `user/forkclone.c` | 신규 | 세 버그를 한 번에 재현·검증하는 프로그램 — TLS 설정 후 raw `fork`(57, musl과 동일한 경로)+`wait4` 두 번 |
 | `Makefile` | 수정 | `FORKCLONEOBJ`/`USERFORKCLONE` 빌드·링크·initramfs 포함·clean 반영 |
 | `initrd/.gitignore` | 수정 | `forkclone` 패턴 추가 |

@@ -16,7 +16,7 @@ typedef struct thread {
     u32           state;
     u32           wake_tick;
     u64           kstack_top;
-    u32           pd;
+    u32           pml4_phys;
     u64           fs_base;
     void         *user_data;
     struct thread *next;
@@ -25,7 +25,7 @@ typedef struct thread {
 
 void      threads_init(u64 idle_kstack_top);
 thread_t *thread_create(thread_fn_t fn);
-thread_t *thread_create_with_data(thread_fn_t fn, void *data, u32 pd, u64 fs_base);
+thread_t *thread_create_with_data(thread_fn_t fn, void *data, u32 pml4_phys, u64 fs_base);
 void      thread_yield(void);
 void      thread_sleep(u32 ms);
 void      thread_park(void);

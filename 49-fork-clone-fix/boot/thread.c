@@ -21,8 +21,8 @@ static void activate_thread(thread_t *t)
 {
     gdt_set_kernel_stack(t->kstack_top);
     syscall_kernel_rsp = t->kstack_top;
-    if (t->pd != 0U)
-        paging_set_dir(t->pd);
+    if (t->pml4_phys != 0U)
+        paging_set_dir(t->pml4_phys);
     else
         paging_restore_kernel_dir();
     gdt_set_fs_base(t->fs_base);
@@ -35,7 +35,7 @@ void threads_init(u64 idle_kstack_top)
     idle_task.state      = THREAD_RUNNING;
     idle_task.wake_tick  = 0U;
     idle_task.kstack_top = idle_kstack_top;
-    idle_task.pd         = 0U;
+    idle_task.pml4_phys  = 0U;
     idle_task.fs_base    = 0U;
     idle_task.user_data  = 0;
     idle_task.next       = &idle_task;
@@ -44,7 +44,7 @@ void threads_init(u64 idle_kstack_top)
     scheduler_ready  = 1U;
 }
 
-thread_t *thread_create_with_data(thread_fn_t fn, void *data, u32 pd, u64 fs_base)
+thread_t *thread_create_with_data(thread_fn_t fn, void *data, u32 pml4_phys, u64 fs_base)
 {
     thread_t *t;
     u8       *stack;
@@ -74,7 +74,7 @@ thread_t *thread_create_with_data(thread_fn_t fn, void *data, u32 pd, u64 fs_bas
     t->state      = THREAD_RUNNING;
     t->wake_tick  = 0U;
     t->kstack_top = (u64)(stack + THREAD_STACK_SIZE);
-    t->pd         = pd;
+    t->pml4_phys  = pml4_phys;
     t->fs_base    = fs_base;
     t->user_data  = data;
     t->proc_next  = 0;
