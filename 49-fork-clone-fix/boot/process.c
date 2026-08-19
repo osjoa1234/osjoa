@@ -12,7 +12,7 @@ static process_t    proc_table[PROC_MAX];
 static wait_queue_t kernel_wait_chldexit;
 
 extern void enter_user_mode(u64 rip, u64 user_rsp);
-extern void enter_user_mode_fork(const fork_resume_t *ctx, u64 fs_base);
+extern void enter_user_mode_fork(const fork_resume_t *ctx);
 
 void proc_init(void)
 {
@@ -64,7 +64,7 @@ static void proc_run_trampoline(void)
 static void fork_child_trampoline(void)
 {
     process_t *p = (process_t *)thread_current()->user_data;
-    enter_user_mode_fork(&p->fork_ctx, thread_current()->fs_base);
+    enter_user_mode_fork(&p->fork_ctx);
 }
 
 typedef struct {
@@ -79,7 +79,7 @@ static void clone_fork_trampoline(void)
     fork_resume_t     r    = ctx->resume;
     thread_current()->user_data = proc;
     kfree(ctx);
-    enter_user_mode_fork(&r, thread_current()->fs_base);
+    enter_user_mode_fork(&r);
 }
 
 u32 proc_spawn(const char *name)

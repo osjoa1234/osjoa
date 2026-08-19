@@ -29,8 +29,9 @@ enter_user_mode:
     mov rax, 0x23
     mov ds, ax
     mov es, ax
-    mov fs, ax
     mov gs, ax
+    xor eax, eax
+    mov fs, ax
 
     push qword 0x23
     push rsi
@@ -60,15 +61,7 @@ enter_user_mode_fork:
     mov rax, 0x23
     mov ds, ax
     mov es, ax
-    mov fs, ax
     mov gs, ax
-
-    mov r10, rsi
-    mov eax, r10d
-    mov rdx, r10
-    shr rdx, 32
-    mov ecx, 0xC0000100
-    wrmsr
 
     push qword 0x23
     push qword [rdi + 120]
