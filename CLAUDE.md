@@ -95,8 +95,12 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 48 | `48-pipe` | `pipe(22)`, `dup2(33)` — 셸 파이프(`\|`); 파일 `>` 리다이렉션은 쓰기 가능한 FS가 없어 다음 단계로 미룸 |
 | 49 | `49-fork-clone-fix` | musl이 실제로 쓰는 `fork()`(raw `SYS_FORK`)+TLS+`wait4` 조합에서 드러난 커널 버그 3개 수정 — busybox 없이 자체 재현 프로그램으로 검증 |
 | 50 | `50-busybox-sh` | `chdir`/`access`/`getcwd` 추가 — busybox.net의 musl 정적 바이너리로 `busybox sh`를 initrd에서 실행 |
-| 51 | `51-disk-fs` | ATA PIO 디스크 읽기, FAT16/ext2 마운트, VFS 디스크 백엔드 연결 |
-| 52 | `52-vfs-ext` | `getdents`, `mkdir`, `unlink` — `ls`/`rm`이 실제 디스크 FS에서 동작 |
+| 51 | `51-ata-pio` | ATA PIO로 LBA 섹터 read/write — FS 파싱 없이 raw sector dump로 드라이버만 검증 |
+| 52 | `52-fat-mount` | FAT16 마운트(읽기 전용) — BPB 파싱 + 루트 디렉토리 나열을 커널 로그로 검증, VFS 연결은 아직 없음 |
+| 53 | `53-vfs-fat-read` | 기존 VFS(`vfs_ops_t`)에 FAT16 open/read/close 백엔드 연결 — initrd 백엔드와 나란히 동작 |
+| 54 | `54-getdents` | `getdents` — `ls`가 디스크 FAT16에서 동작 |
+| 55 | `55-fat-write` | FAT16 쓰기 — 클러스터 할당기, 파일 생성/확장(FAT 체인 갱신), 루트 디렉토리 32바이트 슬롯 스캔 — `>` 리다이렉션의 전제조건 |
+| 56 | `56-mkdir-unlink` | `mkdir`(서브디렉토리 클러스터 체인 생성 + `.`/`..` 엔트리) / `unlink` |
 
 12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → Linux ABI 호환 → **37~40에서 64비트 전환** → 외부 바이너리 실행 순서로 기반을 쌓는다.
 
