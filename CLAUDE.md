@@ -22,13 +22,14 @@
 | `mtools`, `dosfstools` | **apt 설치 필요** | FAT 이미지 생성·복사 (`mkfs.fat`, `mcopy`) |
 | `gcc-multilib`, `g++-multilib` | **apt 설치 필요** | 32비트 크로스 빌드 |
 | `gdb` | **apt 설치 필요** | QEMU 원격 디버깅 (`-s -S`) |
+| `e2fsprogs` | **apt 설치 필요** | ext2 디스크 이미지 생성 (`mkfs.ext2`), 51~56 파일시스템 실습 |
 
 일괄 설치:
 ```bash
 sudo apt update
 sudo apt install -y nasm qemu-system-x86 qemu-utils \
     xorriso grub-pc-bin grub-common mtools dosfstools gdb \
-    gcc-multilib g++-multilib
+    gcc-multilib g++-multilib e2fsprogs
 ```
 
 GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nographic` 또는 `-display none -serial mon:stdio`로 콘솔만 사용.
