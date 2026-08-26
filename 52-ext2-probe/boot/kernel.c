@@ -108,9 +108,9 @@ void kernel_main(u32 magic, u32 phys_mbi)
 
     ata_init();
 
-    if (ext2_mount() != 0) {
+    if (ext2_probe() != 0) {
         console_set_color(0x0CU);
-        console_printf("ext2: mount failed\n");
+        console_printf("ext2: probe failed\n");
     }
 
     if (mbi->flags & (1U << 3U)) {

@@ -97,7 +97,7 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 49 | `49-fork-clone-fix` | musl이 실제로 쓰는 `fork()`(raw `SYS_FORK`)+TLS+`wait4` 조합에서 드러난 커널 버그 3개 수정 — busybox 없이 자체 재현 프로그램으로 검증 |
 | 50 | `50-busybox-sh` | `chdir`/`access`/`getcwd` 추가 — busybox.net의 musl 정적 바이너리로 `busybox sh`를 initrd에서 실행 |
 | 51 | `51-ata-pio` | ATA PIO로 LBA 섹터 read/write — FS 파싱 없이 raw sector dump로 드라이버만 검증 |
-| 52 | `52-ext2-mount` | ext2 마운트(읽기 전용) — 슈퍼블록/블록 그룹 디스크립터 파싱 + 루트 디렉토리 엔트리 나열을 커널 로그로 검증, VFS 연결은 아직 없음 |
+| 52 | `52-ext2-probe` | ext2 온디스크 구조 파싱 검증(읽기 전용) — 슈퍼블록/블록 그룹 디스크립터 파싱 + 루트 디렉토리 엔트리 나열을 커널 로그로 검증, VFS 연결은 아직 없음 |
 | 53 | `53-vfs-ext2-read` | 기존 VFS(`vfs_ops_t`)에 ext2 inode 기반 open/read/close 백엔드 연결 — initrd 백엔드와 나란히 동작 |
 | 54 | `54-getdents` | `getdents` — `ls`가 디스크 ext2에서 동작 |
 | 55 | `55-ext2-write` | ext2 쓰기 — 블록/inode 비트맵 할당기, 파일 생성/확장(direct 블록 포인터 갱신), 디렉토리 엔트리 추가 — `>` 리다이렉션의 전제조건 |

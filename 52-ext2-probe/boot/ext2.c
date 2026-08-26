@@ -144,7 +144,7 @@ static void ext2_print_dir_block(const u8 *block, u32 block_size)
     }
 }
 
-int ext2_mount(void)
+int ext2_probe(void)
 {
     static u8 sb_buf[1024];
     static u8 gd_buf[EXT2_MAX_BLOCK_SIZE];
@@ -229,7 +229,7 @@ int ext2_mount(void)
     }
 
     console_set_color(0x0AU);
-    console_printf("ext2: mount OK\n");
+    console_printf("ext2: probe OK\n");
 
     return 0;
 }

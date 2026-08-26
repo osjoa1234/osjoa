@@ -3,6 +3,6 @@
 
 #include "console.h"
 
-int ext2_mount(void);
+int ext2_probe(void);
 
 #endif
