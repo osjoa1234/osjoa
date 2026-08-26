@@ -113,7 +113,7 @@ static int ext2_read_inode(const ext2_superblock_t *sb, const ext2_group_desc_t 
     return 0;
 }
 
-static void ext2_print_dir_block(const u8 *block, u32 block_size)
+static void ext2_print_root_dir_block(const u8 *block, u32 block_size)
 {
     u32 pos = 0U;
 
@@ -223,7 +223,7 @@ int ext2_probe(void)
             return -1;
         }
 
-        ext2_print_dir_block(dir_buf, block_size);
+        ext2_print_root_dir_block(dir_buf, block_size);
 
         dir_bytes_left -= (dir_bytes_left < block_size) ? dir_bytes_left : block_size;
     }

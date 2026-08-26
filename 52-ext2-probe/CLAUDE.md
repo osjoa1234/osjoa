@@ -84,7 +84,7 @@ initramfs: 13 file(s) found
 | 파일 | 상태 | 설명 |
 |------|------|------|
 | `boot/ext2.h` | 신규 | `ext2_probe()` 선언 |
-| `boot/ext2.c` | 신규 | 슈퍼블록/그룹 디스크립터/inode/디렉토리 엔트리 구조체(packed) + `ext2_read_block`(블록→섹터 변환) + `ext2_read_inode` + `ext2_print_dir_block` + `ext2_probe` |
+| `boot/ext2.c` | 신규 | 슈퍼블록/그룹 디스크립터/inode/디렉토리 엔트리 구조체(packed) + `ext2_read_block`(블록→섹터 변환) + `ext2_read_inode` + `ext2_print_root_dir_block` + `ext2_probe` |
 | `boot/kernel.c` | 수정 | `ext2.h` include; `ata_init()` 이후의 LBA 0 read dump + LBA 5 write/read 검증 블록을 `ext2_probe()` 호출로 교체 |
 | `rootfs/hello.txt`, `rootfs/README` | 신규 | `mkfs.ext2 -d`가 이미지 루트에 넣을 테스트 파일 |
 | `Makefile` | 수정 | `EXT2OBJ` 컴파일·링크 반영; `$(DISKIMG)` 규칙이 `dd` 뒤에 `mkfs.ext2 -d $(ROOTFSDIR)` 실행하도록 변경 |
