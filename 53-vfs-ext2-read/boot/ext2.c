@@ -7,6 +7,9 @@
 #define EXT2_MAX_BLOCK_SIZE 4096U
 #define EXT2_MAX_OPEN       8U
 #define EXT2_DIRECT_BLOCKS  12U
+#define EXT2_MAX_NAME       255U
+#define EXT2_S_IFMT         0xF000U
+#define EXT2_S_IFDIR        0x4000U
 
 typedef struct __attribute__((packed)) {
     u32 s_inodes_count;
@@ -159,35 +162,157 @@ static int ext2_find_in_dir_block(const u8 *block, u32 block_size, const char *n
     return -1;
 }
 
-static int ext2_lookup(const char *name, u32 *out_inode)
+static int ext2_indirect_lookup(u32 block_num, u32 index, u32 *out)
 {
-    static u8 dir_buf[EXT2_MAX_BLOCK_SIZE];
-    ext2_inode_t root_inode;
-    u32 dir_bytes_left;
-    u32 i;
+    static u8 buf[EXT2_MAX_BLOCK_SIZE];
+    const u32 *ptrs;
 
-    if (ext2_read_inode(EXT2_ROOT_INO, &root_inode) != 0) {
+    if (block_num == 0U) {
+        *out = 0U;
+        return 0;
+    }
+
+    if (ext2_read_block(block_num, g_block_size, buf) != 0) {
         return -1;
     }
 
-    dir_bytes_left = root_inode.i_size;
+    ptrs = (const u32 *)buf;
+    *out = ptrs[index];
+    return 0;
+}
 
-    for (i = 0U; i < EXT2_DIRECT_BLOCKS && dir_bytes_left > 0U; i++) {
-        if (root_inode.i_block[i] == 0U) {
-            break;
-        }
+static int ext2_resolve_block(const ext2_inode_t *inode, u32 logical, u32 *out_phys)
+{
+    u32 entries    = g_block_size / 4U;
+    u32 single_max = EXT2_DIRECT_BLOCKS + entries;
+    u32 double_max = single_max + entries * entries;
+    u32 triple_max = double_max + entries * entries * entries;
 
-        if (ext2_read_block(root_inode.i_block[i], g_block_size, dir_buf) != 0) {
-            return -1;
-        }
+    if (logical < EXT2_DIRECT_BLOCKS) {
+        *out_phys = inode->i_block[logical];
+        return 0;
+    }
 
-        if (ext2_find_in_dir_block(dir_buf, g_block_size, name, out_inode) == 0) {
-            return 0;
+    if (logical < single_max) {
+        u32 idx = logical - EXT2_DIRECT_BLOCKS;
+        return ext2_indirect_lookup(inode->i_block[12], idx, out_phys);
+    }
+
+    if (logical < double_max) {
+        u32 idx   = logical - single_max;
+        u32 outer = idx / entries;
+        u32 inner = idx % entries;
+        u32 l1;
+
+        if (ext2_indirect_lookup(inode->i_block[13], outer, &l1) != 0) return -1;
+        return ext2_indirect_lookup(l1, inner, out_phys);
+    }
+
+    if (logical < triple_max) {
+        u32 idx   = logical - double_max;
+        u32 outer = idx / (entries * entries);
+        u32 rem   = idx % (entries * entries);
+        u32 mid   = rem / entries;
+        u32 inner = rem % entries;
+        u32 l1;
+        u32 l2;
+
+        if (ext2_indirect_lookup(inode->i_block[14], outer, &l1) != 0) return -1;
+        if (ext2_indirect_lookup(l1, mid, &l2) != 0) return -1;
+        return ext2_indirect_lookup(l2, inner, out_phys);
+    }
+
+    return -1;
+}
+
+#define EXT2_TEST_TRIPLE_L1      8188U
+#define EXT2_TEST_TRIPLE_DATA    8191U
+#define EXT2_TEST_TRIPLE_PATTERN "ext2 deep indirect block OK"
+
+static void ext2_self_test_triple_indirect(void)
+{
+    static u8    buf[EXT2_MAX_BLOCK_SIZE];
+    ext2_inode_t fake = {0};
+    u32          entries;
+    u32          logical;
+    u32          phys = 0U;
+    u32          i;
+    int          ok;
+
+    fake.i_block[14] = EXT2_TEST_TRIPLE_L1;
+
+    entries = g_block_size / 4U;
+    logical = EXT2_DIRECT_BLOCKS + entries + entries * entries;
+
+    ok = (ext2_resolve_block(&fake, logical, &phys) == 0) && (phys == EXT2_TEST_TRIPLE_DATA);
+
+    if (ok && ext2_read_block(phys, g_block_size, buf) == 0) {
+        const char *pattern = EXT2_TEST_TRIPLE_PATTERN;
+
+        for (i = 0U; pattern[i] != '\0'; i++) {
+            if (buf[i] != (u8)pattern[i]) { ok = 0; break; }
         }
+    } else {
+        ok = 0;
+    }
+
+    console_set_color(ok ? 0x0AU : 0x0CU);
+    console_printf("ext2: triple-indirect self-test %s (logical=%u phys=%u)\n",
+                   ok ? "OK" : "FAIL", logical, phys);
+}
+
+static int ext2_scan_dir(const ext2_inode_t *dir_inode, const char *name, u32 *out_inode)
+{
+    static u8 dir_buf[EXT2_MAX_BLOCK_SIZE];
+    u32 dir_bytes_left = dir_inode->i_size;
+    u32 block_index = 0U;
+    u32 phys_block;
+
+    while (dir_bytes_left > 0U) {
+        if (ext2_resolve_block(dir_inode, block_index, &phys_block) != 0) break;
+        if (phys_block == 0U) break;
+
+        if (ext2_read_block(phys_block, g_block_size, dir_buf) != 0) return -1;
+
+        if (ext2_find_in_dir_block(dir_buf, g_block_size, name, out_inode) == 0) return 0;
 
         dir_bytes_left -= (dir_bytes_left < g_block_size) ? dir_bytes_left : g_block_size;
+        block_index++;
     }
     return -1;
+}
+
+static int ext2_resolve_path(const char *path, u32 *out_inode)
+{
+    ext2_inode_t cur_inode;
+    u32          cur_inode_num = EXT2_ROOT_INO;
+    const char  *p = path;
+
+    if (ext2_read_inode(cur_inode_num, &cur_inode) != 0) return -1;
+
+    while (*p) {
+        char seg[EXT2_MAX_NAME + 1U];
+        u32  seg_len = 0U;
+        u32  next_inode_num;
+
+        while (*p == '/') p++;
+        if (*p == '\0') break;
+
+        while (*p && *p != '/' && seg_len < EXT2_MAX_NAME) {
+            seg[seg_len++] = *p++;
+        }
+        seg[seg_len] = '\0';
+
+        if ((cur_inode.i_mode & EXT2_S_IFMT) != EXT2_S_IFDIR) return -1;
+
+        if (ext2_scan_dir(&cur_inode, seg, &next_inode_num) != 0) return -1;
+
+        cur_inode_num = next_inode_num;
+        if (ext2_read_inode(cur_inode_num, &cur_inode) != 0) return -1;
+    }
+
+    *out_inode = cur_inode_num;
+    return 0;
 }
 
 int ext2_init(void)
@@ -238,6 +363,9 @@ int ext2_init(void)
                    g_gd->bg_free_blocks_count, g_gd->bg_free_inodes_count);
 
     g_ready = 1;
+
+    ext2_self_test_triple_indirect();
+
     return 0;
 }
 
@@ -247,7 +375,7 @@ int ext2_open(const char *path)
     u32 i;
 
     if (!g_ready) return -1;
-    if (ext2_lookup(path, &inode_num) != 0) return -1;
+    if (ext2_resolve_path(path, &inode_num) != 0) return -1;
 
     for (i = 0U; i < EXT2_MAX_OPEN; i++) {
         if (!g_ofiles[i].used) {
@@ -284,9 +412,7 @@ u32 ext2_read(int bfd, u8 *buf, u32 len, u32 pos)
         block_index = (pos + total) / g_block_size;
         block_off   = (pos + total) % g_block_size;
 
-        if (block_index >= EXT2_DIRECT_BLOCKS) break;
-
-        phys_block = f->inode.i_block[block_index];
+        if (ext2_resolve_block(&f->inode, block_index, &phys_block) != 0) break;
         if (phys_block == 0U) break;
 
         if (ext2_read_block(phys_block, g_block_size, block_buf) != 0) break;

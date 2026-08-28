@@ -23,6 +23,7 @@
 | `gcc-multilib`, `g++-multilib` | **apt 설치 필요** | 32비트 크로스 빌드 |
 | `gdb` | **apt 설치 필요** | QEMU 원격 디버깅 (`-s -S`) |
 | `e2fsprogs` | **apt 설치 필요** | ext2 디스크 이미지 생성 (`mkfs.ext2`), 51~56 파일시스템 실습 |
+| `python3` | 기본 설치됨(Ubuntu) | 빌드 타임 테스트 데이터 생성 스크립트 (예: 53의 `tools/ext2_testgen.py`) — 커널/부트로더 코드와는 무관, 호스트 전용 |
 
 일괄 설치:
 ```bash

@@ -41,7 +41,9 @@ KERNELELF    := $(BUILD)/kernel.elf
 ISO          := $(BUILD)/os.iso
 DISKIMG      := $(BUILD)/disk.img
 ROOTFSDIR    := rootfs
-ROOTFSFILES  := $(ROOTFSDIR)/hello.txt $(ROOTFSDIR)/README $(ROOTFSDIR)/multiblock.txt
+ROOTFSFILES  := $(ROOTFSDIR)/hello.txt $(ROOTFSDIR)/README $(ROOTFSDIR)/multiblock.txt $(ROOTFSDIR)/sub/nested.txt
+PYTHON3      := python3
+TESTGEN      := tools/ext2_testgen.py
 
 USERINIT     := $(BUILD)/init
 USEROBJ      := $(BUILD)/init_user.o
@@ -262,11 +264,13 @@ $(ISO): $(KERNELELF) $(INITRAMFS) grub/grub.cfg | $(BUILD)
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(DISKIMG): $(ROOTFSFILES) | $(BUILD)
+$(DISKIMG): $(ROOTFSFILES) $(TESTGEN) | $(BUILD)
+	$(PYTHON3) $(TESTGEN) genfiles $(ROOTFSDIR)
 	dd if=/dev/zero of=$@ bs=1M count=8 status=none
 	mkfs.ext2 -q -F -b 1024 -I 128 \
 	    -O sparse_super,filetype,^resize_inode,^dir_index,^ext_attr,^large_file,^huge_file,^uninit_bg,^flex_bg,^64bit,^metadata_csum \
 	    -d $(ROOTFSDIR) $@
+	$(PYTHON3) $(TESTGEN) plant $@
 
 run: $(ISO) $(DISKIMG)
 	$(QEMU) -cdrom $(ISO) -drive file=$(DISKIMG),format=raw,if=ide,index=0

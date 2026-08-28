@@ -69,10 +69,60 @@ while (total < len) {
 - **initrd 경로 회귀 없음**: `proc_exec`는 여전히 `initrd_open`을 직접 호출하고(`boot/process.c`) VFS를 거치지 않으므로, 실행 파일 탐색(셸의 `busybox`, `pipe` 등 명령 실행)은 이번 변경과 무관하게 그대로 동작한다. VFS 경유 `open`/`read`(파일 내용을 읽는 syscall 경로)만 ext2를 새로 인식한다.
 - **`VFS_MOUNT_MAX=4`**: 마운트 테이블에 `/`(initrd), `/disk/`(ext2) 두 엔트리가 들어가 여유가 있다.
 
+## 중첩 디렉터리 경로 탐색
+
+`ext2_lookup`은 원래 루트 inode(2)의 디렉터리 엔트리만 이름으로 검색했다 — `/disk/sub/file.txt`처럼 경로에 `/`가 더 있으면 그 뒤는 통째로 무시하고 첫 세그먼트만 찾으려다 실패했다. `ext2_read`가 `i_block[]` 12개 이후를 direct 블록처럼 착각하면 안 되는 것과 같은 이유로, `ext2_open`도 경로 세그먼트 사이의 "다음 단계로 내려간다"는 개념 없이 평평한 이름 하나만 찾는 건 `open()`을 절반만 구현한 셈이다 — 그래서 같은 53 스코프(open/read를 실제로 쓸 수 있게 만들기) 안에서 함께 처리했다.
+
+`ext2_lookup`을 두 함수로 나눴다:
+
+- `ext2_scan_dir(dir_inode, name, &out_inode)` — 주어진 디렉터리 inode 하나의 엔트리들 사이에서 이름을 찾는다. 예전엔 이 역할을 하는 코드가 루트 inode의 `i_block[0..11]`만 직접 순회했지만, 지금은 `ext2_resolve_block`을 재사용해 디렉터리가 몇 번째 논리 블록에 있든(이론적으로는 indirect 구간까지도) 옳게 찾는다.
+- `ext2_resolve_path(path, &out_inode)` — 경로를 `/`로 나눠 세그먼트마다 `ext2_scan_dir`을 반복 호출한다. 루트(inode 2)에서 시작해서, 마지막 세그먼트가 아닌 단계마다 방금 찾은 inode가 `i_mode & 0xF000 == 0x4000`(디렉터리)인지 확인하고 아니면 실패시킨다 — 파일을 디렉터리처럼 파고들려는 경로(`/disk/hello.txt/x`)를 걸러내기 위함이다. 마지막 세그먼트는 파일이든 디렉터리든 타입을 검사하지 않는다(기존 동작 그대로 유지 — `ext2_open`이 여는 대상의 타입을 애초에 검사하지 않았다).
+
+`ext2_open`은 `ext2_lookup` 대신 `ext2_resolve_path`를 호출하도록 한 줄만 바뀌었다. `rootfs/sub/nested.txt`를 새로 추가해 `/disk/sub/nested.txt`를 여는 경로로 실제 검증한다(아래 완료 기준 참고).
+
+## indirect 블록 포인터(single/double/triple) 지원
+
+`ext2_read`가 처음 구현될 때는 `block_index >= EXT2_DIRECT_BLOCKS(12)`면 그 자리에서 멈췄다 — `i_block[12..14]`는 direct 블록 번호가 아니라 "블록 번호가 들어있는 블록"을 가리키는 간접 포인터인데, 그 사실을 무시하고 인덱스 상한만 늘리면 포인터 블록의 raw 바이트를 파일 데이터로 잘못 반환하게 된다. 그래서 `ext2_resolve_block(inode, logical_block, &phys)`을 새로 추가해 논리 블록 번호 하나를 물리 블록 번호로 바꾸는 계산을 전담시켰다:
+
+| 논리 블록 범위 | 경로 |
+|----------------|------|
+| `0 ~ 11` | `i_block[0..11]` 직접 |
+| `12 ~ 267` | `i_block[12]`(single indirect) → 그 블록의 `entries_per_block`(=`block_size/4`=256)개 포인터 중 하나 |
+| `268 ~ 65803` | `i_block[13]`(double indirect) → 1단계 블록 → 2단계 블록 |
+| `65804 ~` | `i_block[14]`(triple indirect) → 1단계 → 2단계 → 3단계 블록 |
+
+`ext2_indirect_lookup(block_num, index, &out)`이 공통 하부 함수다 — 포인터 블록 하나를 읽어 `index`번째 `u32`를 반환할 뿐이라 single/double/triple이 이 함수를 1~3번 체이닝하는 것으로 전부 표현된다. `ext2_read`는 이제 `i_block[block_index]`를 직접 읽는 대신 매 블록마다 `ext2_resolve_block`을 호출한다. `ext2_lookup`(루트 디렉토리 탐색)은 손대지 않았다 — 루트 디렉토리가 direct 블록 12개를 넘을 일이 없기 때문이다(다음 단계 힌트 참고).
+
+### 왜 triple indirect는 실제 파일로 검증할 수 없는가
+
+single indirect(12KB~268KB)와 double indirect(268KB~64MB 시작)는 지금 8MB `disk.img` 안에서 실제 파일(`rootfs/singleindirect.txt` 20KB, `rootfs/doubleindirect.txt` 300KB)로 자연스럽게 도달한다 — mkfs가 평범하게 할당한 블록을 그대로 읽는다.
+
+triple indirect는 논리 블록 65804(파일 오프셋 약 64.3MB) 이상부터 쓰이는데, ext2 포맷 자체가 블록 그룹 하나의 최대 크기를 `block_size × 8`로 강제한다(블록 비트맵이 정확히 블록 1개라서). 지금 쓰는 1024바이트 블록 기준 그룹 하나의 상한이 정확히 8192블록(8MB)이고, 그게 바로 `disk.img`가 8MB인 이유다. triple indirect를 실제 파일로 태우려면 64MB 넘는 디스크가 필요한데, 그러면 블록 그룹이 여러 개로 쪼개져 `ext2_read_inode`가 그룹 0의 inode 테이블(`g_gd`)만 본다는 전제(52부터 유지된 스코프 한계)가 깨질 위험이 있다 — 거대 파일의 inode가 그룹 0이 아닌 곳에 배치되면 완전히 엉뚱한 inode를 읽게 된다. 멀티 그룹 지원은 이번 단계 스코프가 아니므로, 디스크를 키우는 대신 **`ext2_self_test_triple_indirect()`(`boot/ext2.c`, `ext2_init()` 끝에서 호출)라는 커널 단위 테스트**로 대체했다.
+
+이 테스트는 mkfs가 만든 어떤 실제 파일과도 무관하다: 로컬 `ext2_inode_t`를 하나 만들어 `i_block[14]`만 채우고, `ext2_resolve_block`에 큰 논리 인덱스(65804, triple indirect의 첫 블록)를 직접 넣어 호출한다. 포인터 체인이 가리키는 블록들(`i_block[14]` 자신 포함 4개)은 `disk.img`의 마지막 4블록(8188~8191, `tools/ext2_testgen.c`의 `TRIPLE_L1/L2/L3/DATA_BLOCK`)에 **빌드 타임에** 심어둔다 — rootfs가 8MB 중 수백 블록만 쓰므로 mkfs 할당이 거기까지 닿지 않는다는 사실에 기댄다(실제로 `free_blocks=7588`로 확인됨). 커널은 이 블록들을 읽기만 하므로 51부터 지켜온 "`ata_write_sector`는 커널 코드에서 호출되지 않는다"는 불변식이 그대로 유지된다.
+
+## 빌드 타임 테스트 데이터 생성: `tools/ext2_testgen.py`
+
+호스트에서 `python3`로 직접 실행하는 작은 스크립트다(Ubuntu 기본 설치, 이 저장소 툴체인 표에 새로 추가됨). 두 가지 모드:
+
+- `genfiles <rootfs_dir>`: `singleindirect.txt`(20480바이트)와 `doubleindirect.txt`(307200바이트)를 `byte[i] = i % 256` 패턴으로 생성한다. `mkfs.ext2 -d` 실행 **전에** 호출해 rootfs에 들어가게 한다. 두 파일 다 `.gitignore` 처리되어 저장소엔 생성 코드만 남는다(300KB짜리 생성 파일을 커밋하지 않기 위함).
+- `plant <disk_img>`: 위에서 설명한 triple indirect 포인터 체인 4블록을 `disk.img`에 raw write한다. `mkfs.ext2` 실행 **후에** 호출해야 한다.
+
+`Makefile`의 `$(DISKIMG)` 레시피 안에서 `genfiles` → `mkfs.ext2 -d` → `plant` 순서로 한 레시피 안에 나열해 순서를 보장했다(멀티 타겟 규칙의 중복 실행 문제를 피하려고 별도 파일 규칙을 만들지 않았다). 처음엔 C(`gcc`)로 짰다가, "이렇게 단순한 스크립트에 굳이 커널 툴체인 언어를 맞출 필요가 있냐"는 지적을 받고 파이썬으로 교체했다 — 별도 컴파일 단계 없이 `$(PYTHON3) $(TESTGEN) ...`로 바로 실행된다.
+
+## 검증에 쓰인 오프셋
+
+`user/init.c`의 `check_indirect_probe(path, off)`는 `multiblock.txt`처럼 파일 전체를 읽지 않는다 — `doubleindirect.txt`(300KB)를 유저 공간 정적 버퍼로 통째로 읽는 대신, `sys_lseek`으로 특정 오프셋까지 이동한 뒤 32바이트만 읽어 `byte[i] = i % 256` 패턴과 비교한다. 이번에 처음으로 유저 공간에 `sys_lseek`(syscall 8) 래퍼가 추가됐다.
+
+| 파일 | 오프셋 | 검증하는 경로 |
+|------|--------|----------------|
+| `singleindirect.txt` | 15460 | 논리 블록 15 → single indirect (`i_block[12]`) |
+| `doubleindirect.txt` | 286770 | 논리 블록 280 → double indirect (`i_block[13]`) |
+
 ## 명령
 
 ```bash
-make            # build/os.iso, build/disk.img(rootfs/에 multiblock.txt 포함해 재생성) 생성
+make            # build/os.iso, build/disk.img(rootfs/에 생성된 테스트 파일 포함) 생성
 make run        # QEMU GUI
 make run-nogui  # debugcon 확인 — $ 프롬프트에서 멈춤 (정상)
 make clean      # build/ 전체 삭제 (disk.img도 함께 삭제됨 — 다음 make에서 rootfs/로부터 재생성)
@@ -85,7 +135,8 @@ make clean      # build/ 전체 삭제 (disk.img도 함께 삭제됨 — 다음 
 ```
 ata: primary master ready (0x1F0-0x1F7, ctrl=0x3F6)
 ext2: superblock magic=0xEF53 rev=1 block_size=1024 blocks=8192 inodes=2048
-ext2: group 0: inode_table=5 block_bitmap=3 inode_bitmap=4 free_blocks=7913 free_inodes=2034
+ext2: group 0: inode_table=5 block_bitmap=3 inode_bitmap=4 free_blocks=7586 free_inodes=2029
+ext2: triple-indirect self-test OK (logical=65804 phys=8191)
 initramfs: 13 file(s) found
 vfs: initrd mounted at /
 vfs: ext2 mounted at /disk/
@@ -95,6 +146,9 @@ processes: init spawned pid=0
 shell: linux-abi ready
 shell: ext2 /disk/hello.txt: hello ext2 root fs
 shell: ext2 /disk/multiblock.txt: content OK
+shell: ext2 /disk/singleindirect.txt: content OK
+shell: ext2 /disk/doubleindirect.txt: content OK
+shell: ext2 /disk/sub/nested.txt: hello nested dir
 $
 ```
 
@@ -103,18 +157,21 @@ $
 | 파일 | 상태 | 설명 |
 |------|------|------|
 | `boot/ext2.h` | 수정 | `ext2_probe()` 선언을 `ext2_init`/`ext2_open`/`ext2_read`/`ext2_size`/`ext2_close`로 교체 |
-| `boot/ext2.c` | 수정 | 슈퍼블록/그룹 디스크립터를 static 전역에 캐싱하는 `ext2_init`; 루트 디렉토리에서 이름으로 inode를 찾는 `ext2_lookup`/`ext2_find_in_dir_block`; open-file 슬롯 테이블(`g_ofiles`, `EXT2_MAX_OPEN=8`) 기반 `ext2_open`/`ext2_read`(direct 블록 경계를 넘는 다중 블록 읽기)/`ext2_size`/`ext2_close` |
+| `boot/ext2.c` | 수정 | 슈퍼블록/그룹 디스크립터를 static 전역에 캐싱하는 `ext2_init`; open-file 슬롯 테이블(`g_ofiles`, `EXT2_MAX_OPEN=8`) 기반 `ext2_open`/`ext2_read`(direct 블록 경계를 넘는 다중 블록 읽기)/`ext2_size`/`ext2_close`; single/double/triple indirect 해석(`ext2_resolve_block`/`ext2_indirect_lookup`); triple indirect 전용 커널 단위 테스트(`ext2_self_test_triple_indirect`); 중첩 경로 탐색(`ext2_resolve_path`가 세그먼트마다 `ext2_scan_dir` 호출, 예전 `ext2_lookup`의 루트 전용 인라인 순회를 대체 — `ext2_find_in_dir_block`은 그대로 재사용) |
 | `boot/kernel.c` | 수정 | `ext2_probe()` 호출을 `ext2_init()`으로 교체; `ext2_ops` vtable 추가; `vfs_mount("/disk/", &ext2_ops)` 등록 |
-| `user/init.c` | 수정 | `sys_open` 래퍼 추가; 셸 루프 진입 전 `/disk/hello.txt` 읽어 출력, `/disk/multiblock.txt` 전체를 읽어 패턴 일치 여부를 유저 공간에서 검사해 `content OK`/`content MISMATCH` 출력 |
-| `rootfs/multiblock.txt` | 신규 | 2600바이트, `'0'`~`'9'` 반복 패턴 — 블록 크기 1024에서 direct 블록 3개(0,1,2)에 걸친 읽기 검증용 |
-| `Makefile` | 수정 | `ROOTFSFILES`에 `rootfs/multiblock.txt` 추가(변경 시 `disk.img` 재생성 트리거) |
-| `rootfs/hello.txt`, `rootfs/README` | 변경 없음 | 52의 파일 그대로, 이제 `ext2_open`으로 실제로 열려 읽힌다 |
+| `user/init.c` | 수정 | `sys_open`/`sys_lseek` 래퍼 추가; 셸 루프 진입 전 `/disk/hello.txt` 읽어 출력, `/disk/multiblock.txt` 전체 읽어 패턴 검사, `/disk/singleindirect.txt`·`/disk/doubleindirect.txt`를 `lseek`+짧은 `read`로 깊은 오프셋 패턴 검사, `/disk/sub/nested.txt`를 열어 중첩 경로 탐색 검증 |
+| `rootfs/multiblock.txt` | 변경 없음 | 2600바이트, direct 블록 3개 경계 읽기 검증용, 53 최초 커밋에서 그대로 |
+| `rootfs/sub/nested.txt` | 신규 | 중첩 디렉터리 경로 탐색(`ext2_resolve_path`) 검증용 — `/disk/sub/nested.txt` |
+| `rootfs/singleindirect.txt`, `rootfs/doubleindirect.txt` | 신규(생성됨, 미커밋) | `tools/ext2_testgen.c genfiles`가 빌드 타임에 생성 — single/double indirect 경로가 걸리는 크기(20KB/300KB) |
+| `rootfs/.gitignore` | 신규 | 생성된 두 테스트 파일을 저장소에서 제외 |
+| `tools/ext2_testgen.py` | 신규 | 호스트 파이썬 스크립트 — 테스트 파일 생성(`genfiles`) + triple indirect 포인터 체인을 `disk.img` 마지막 4블록에 raw write(`plant`) |
+| `Makefile` | 수정 | `$(DISKIMG)` 레시피가 `python3 tools/ext2_testgen.py genfiles` → `mkfs.ext2 -d` → `python3 tools/ext2_testgen.py plant` 순서로 실행하도록 확장 |
+| `rootfs/hello.txt`, `rootfs/README` | 변경 없음 | 52의 파일 그대로 |
 | `boot/ata.c`, `boot/ata.h` | 변경 없음 | 51의 드라이버 그대로 |
 
 ## 다음 단계 힌트
 
 - `54-getdents`: `ext2_open`이 루트 디렉토리 안의 "파일 이름 하나"만 찾을 수 있고, 디렉토리 자체를 열어 엔트리 목록을 얻는 경로는 아직 없다 — `getdents` syscall과 `ls`가 이 경로를 필요로 한다. 지금 `ext2_lookup`이 이미 디렉토리 엔트리를 순회하는 로직을 갖고 있으니 그걸 노출하는 형태가 될 것이다.
-- **서브디렉토리 미지원**: `ext2_lookup`은 루트 inode(2)에서만 이름을 찾는다. `/disk/sub/file.txt`처럼 중첩 경로는 아직 해석하지 못한다(디렉토리 엔트리를 만나도 항상 파일로 취급해 그 inode를 열어버린다 — `i_mode`의 디렉토리 비트를 검사하지 않음). 경로를 `/`로 나눠 각 세그먼트마다 `ext2_lookup`을 반복 호출하는 형태로 확장해야 한다.
-- **indirect 블록 포인터(`i_block[12..14]`) 여전히 미지원**: `ext2_read`는 `block_index >= 12`면 그 자리에서 멈춘다. 12KB(블록 크기 1024 기준)를 넘는 파일은 뒷부분이 잘려서 읽힌다.
-- 블록 그룹 1개, 그룹 0만 지원하는 한계도 52와 동일하게 유지된다.
-- `55-ext2-write`에서 쓰기 경로가 추가되면 지금 `ext2_read`가 참조하는 캐싱된 inode(`g_ofiles[i].inode`)가 파일 크기 변경 등으로 stale해질 수 있다는 점을 염두에 둬야 한다 — 지금은 읽기 전용이라 문제되지 않는다.
+- **서브디렉토리 지원 완료**: `ext2_resolve_path`가 `/`로 나눈 세그먼트마다 `ext2_scan_dir`을 반복 호출해 중첩 경로를 해석한다(위 "중첩 디렉터리 경로 탐색" 절 참고). `..`/`.`은 디렉터리 엔트리에 그대로 들어있는 특수 이름이라 별도 처리 없이도 `ext2_scan_dir`이 찾아내지만, 셸이나 `sys_getcwd`가 그걸 실제로 활용하는 경로는 아직 없다.
+- **블록 그룹 1개, 그룹 0만 지원**: 52부터 유지된 한계. 이번 단계에서 triple indirect를 커널 자체 테스트로 우회한 이유가 바로 이것 — 디스크를 키워 실제 64MB+ 파일로 검증하려면 멀티 그룹(그룹별 inode 테이블 조회)을 먼저 구현해야 한다. 언젠가 멀티 그룹을 지원하게 되면, 그때는 `ext2_self_test_triple_indirect()`의 synthetic 블록 대신 실제 대용량 파일로 교체하는 것을 고려할 만하다.
+- `55-ext2-write`에서 쓰기 경로가 추가되면 지금 `ext2_read`가 참조하는 캐싱된 inode(`g_ofiles[i].inode`)가 파일 크기 변경 등으로 stale해질 수 있다는 점을 염두에 둬야 한다 — 지금은 읽기 전용이라 문제되지 않는다. 또한 쓰기 경로에서 블록을 새로 할당하게 되면 `disk.img`의 마지막 4블록(8188~8191)이 triple indirect 테스트용으로 예약되어 있다는 사실과 충돌하지 않는지 확인해야 한다(free block bitmap에는 이 4블록이 여전히 "빈 블록"으로 표시되어 있으므로, 쓰기 할당기가 실제로 이 블록들을 골라 덮어쓸 수 있다 — 지금은 읽기 전용이라 문제되지 않지만 55에서는 실제 위험이다).

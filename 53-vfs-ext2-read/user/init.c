@@ -64,6 +64,13 @@ static long sys_open(const char *path)
     return ret;
 }
 
+static long sys_lseek(unsigned int fd, long offset, unsigned int whence)
+{
+    long ret;
+    __asm__ volatile ("syscall" : "=a"(ret) : "a"(8L), "D"(fd), "S"(offset), "d"(whence) : "rcx", "r11", "memory");
+    return ret;
+}
+
 static unsigned int slen(const char *s)
 {
     unsigned int n = 0U;
@@ -80,6 +87,45 @@ static int streq(const char *a, const char *b)
 {
     while (*a && *b && *a == *b) { a++; b++; }
     return *a == *b;
+}
+
+#define U_SEEK_SET      0U
+
+#define SINGLE_INDIRECT_PROBE_OFF 15460U
+#define DOUBLE_INDIRECT_PROBE_OFF 286770U
+#define INDIRECT_PROBE_LEN        32U
+
+static void check_indirect_probe(const char *path, unsigned int off)
+{
+    char         buf[INDIRECT_PROBE_LEN];
+    long         fd;
+    unsigned int n;
+    unsigned int i;
+    unsigned int ok;
+
+    fd = sys_open(path);
+    if (fd < 0) {
+        writes("shell: ext2 open ");
+        writes(path);
+        writes(" failed\n");
+        return;
+    }
+
+    sys_lseek((unsigned int)fd, (long)off, U_SEEK_SET);
+    n = sys_read((unsigned int)fd, buf, INDIRECT_PROBE_LEN);
+    sys_close((unsigned int)fd);
+
+    ok = (n == INDIRECT_PROBE_LEN) ? 1U : 0U;
+    if (ok) {
+        for (i = 0U; i < n; i++) {
+            if ((unsigned char)buf[i] != (unsigned char)((off + i) % 256U)) { ok = 0U; break; }
+        }
+    }
+
+    writes("shell: ext2 ");
+    writes(path);
+    writes(": ");
+    writes(ok ? "content OK\n" : "content MISMATCH\n");
 }
 
 #define SHELL_ARGV_MAX  8U
@@ -171,6 +217,20 @@ void _start(void)
 
         writes("shell: ext2 /disk/multiblock.txt: ");
         writes(ok ? "content OK\n" : "content MISMATCH\n");
+    }
+
+    check_indirect_probe("/disk/singleindirect.txt", SINGLE_INDIRECT_PROBE_OFF);
+    check_indirect_probe("/disk/doubleindirect.txt", DOUBLE_INDIRECT_PROBE_OFF);
+
+    fd = sys_open("/disk/sub/nested.txt");
+    if (fd < 0) {
+        writes("shell: ext2 open /disk/sub/nested.txt failed\n");
+    } else {
+        n = sys_read((unsigned int)fd, buf, sizeof(buf) - 1U);
+        buf[n] = '\0';
+        sys_close((unsigned int)fd);
+        writes("shell: ext2 /disk/sub/nested.txt: ");
+        writes(buf);
     }
 
     for (;;) {
