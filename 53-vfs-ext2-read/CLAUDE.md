@@ -23,20 +23,40 @@
 
 `ext2_read_block`(블록→섹터 변환), `ext2_read_inode`(inode 번호→테이블 오프셋)는 52와 동일한 로직을 전역 `g_sb`/`g_gd`/`g_block_size`를 참조하도록만 바꿔 재사용했다. 52의 `ext2_print_root_dir_block`(엔트리를 콘솔에 출력)은 `ext2_find_in_dir_block`(이름이 일치하는 엔트리를 찾으면 inode 번호를 반환)으로 바뀌었다 — 순회 구조는 동일하고 "찾으면 출력"이 "찾으면 반환"으로 바뀐 것뿐이다.
 
-### open-file 테이블
+### open-file 테이블과 inode identity 공유
 
 ```c
 #define EXT2_MAX_OPEN 8U
 
 typedef struct {
     int          used;
+    u32          inode_num;
+    u32          refcount;
     ext2_inode_t inode;
 } ext2_ofile_t;
 
 static ext2_ofile_t g_ofiles[EXT2_MAX_OPEN];
 ```
 
-`ext2_open`이 호출될 때마다 inode 전체(128바이트, `i_block[0..11]` 포함)를 슬롯에 복사해둔다. 그래서 `ext2_read`는 매 호출마다 inode를 다시 읽지 않고 `pos`만으로 어느 direct 블록의 어느 오프셋인지 계산한다. 슬롯이 8개뿐이라 동시에 열 수 있는 ext2 파일은 8개까지다(`vfs_dup`으로 fd를 복제해도 `ext2_ops.dup`이 없으므로 백엔드 슬롯은 늘지 않고 그대로 공유된다 — `boot/console_dev.c`의 console 백엔드와 같은 패턴).
+`ext2_open`이 호출될 때마다 inode 전체(128바이트, `i_block[0..11]` 포함)를 슬롯에 복사해둔다. 그래서 `ext2_read`는 매 호출마다 inode를 다시 읽지 않고 `pos`만으로 어느 direct 블록의 어느 오프셋인지 계산한다.
+
+처음 구현했을 때는 `ext2_open`이 빈 슬롯을 찾을 때 "이미 같은 파일이 열려있는가"를 확인하지 않았다 — 같은 경로를 두 번 열면 `ext2_resolve_path`가 매번 같은 inode 번호를 찾아내는데도 서로 다른 슬롯에 inode 데이터가 통째로 두 벌 복사됐다. `initrd_open`(정적 배열 인덱스라 같은 이름이면 항상 같은 fd를 반환)과 비교하면 같은 `vfs_ops_t` 인터페이스의 두 구현이 identity 의미론에서 어긋나 있었던 것 — 리눅스라면 이 자리는 `(superblock, inode 번호)`로 찾는 icache가 담당해서 어느 백엔드든 같은 동작을 보장한다. 그래서 `ext2_open`을 lookup-or-create로 바꿨다:
+
+```c
+for (i = 0; i < EXT2_MAX_OPEN; i++) {
+    if (fs->ofiles[i].used && fs->ofiles[i].inode_num == inode_num) {
+        fs->ofiles[i].refcount++;
+        return (int)i;
+    }
+}
+/* 없으면 기존처럼 빈 슬롯에 새로 읽어옴, refcount = 1 */
+```
+
+슬롯을 공유하게 됐으니 `ext2_close`도 즉시 반납 대신 `refcount--` 후 0이 될 때만 `used = 0`으로 바꿨다. 이 리눅스식 lookup-or-create/refcount 패턴은 icache 전체를 새로 만드는 게 아니라 `ext2.c` 내부에 로컬하게 최소한으로 구현한 것이다 — identity 공유가 필요한 백엔드가 지금은 ext2 하나뿐이라 `vfs.c`에 공용 캐시 레이어를 신설하는 건 이 스코프에 과한 일반화다.
+
+이 fix가 진짜로 필요해지는 이유(fd A로 쓴 내용이 fd B에서도 보여야 한다)는 55(ext2-write)에서 쓰기가 생겨야 관찰 가능하다. 하지만 "이 인터페이스의 여러 백엔드가 같은 의미론을 지켜야 한다"는 53 자신의 스코프이므로, 구현은 지금 끝내고 **검증만** `user/init.c`의 `check_dual_open("/disk/hello.txt", ...)`으로 한다 — 같은 파일을 두 fd로 열어 각각 독립된 `pos`로 정상히 읽히는지, 한쪽을 닫아도 남은 쪽이 refcount 덕분에 계속 정상 동작하는지까지 확인한다. "fd A가 쓴 게 fd B에 보이는가"라는 coherency 자체는 여전히 55의 몫으로 남는다.
+
+슬롯이 8개뿐이라 동시에 열려있는 서로 다른 파일은 8개까지다(같은 파일을 여러 번 여는 건 이제 슬롯 하나를 공유하므로 이 한도에 안 걸림). `vfs_dup`으로 fd를 복제해도 `ext2_ops.dup`이 없으므로 백엔드 슬롯은 늘지 않고 그대로 공유된다 — `boot/console_dev.c`의 console 백엔드와 같은 패턴이자, 지금 추가한 refcount와도 결이 같다(다만 `vfs_dup`은 `ext2_open`을 다시 부르지 않으므로 refcount가 증가하지 않는다 — dup된 fd들은 원본과 같은 참조 하나를 공유할 뿐이다).
 
 ### 여러 direct 블록에 걸친 읽기
 
@@ -144,6 +164,7 @@ shell: ext2 /disk/hello.txt: hello ext2 root fs
 shell: ext2 /disk/multiblock.txt: content OK
 shell: ext2 /disk/singleindirect.txt: content OK
 shell: ext2 /disk/doubleindirect.txt: content OK
+shell: ext2 dual-open /disk/hello.txt: OK
 shell: ext2 /disk/sub/nested.txt: hello nested dir
 $
 ```
@@ -153,8 +174,8 @@ $
 | 파일 | 상태 | 설명 |
 |------|------|------|
 | `boot/ext2.h` | 수정 | `ext2_probe()` 선언을 `ext2_init`/`ext2_open`/`ext2_read`/`ext2_size`/`ext2_close`로 교체 |
-| `boot/ext2.c` | 수정 | 슈퍼블록/그룹 디스크립터를 static 전역에 캐싱하는 `ext2_init`; open-file 슬롯 테이블(`g_ofiles`, `EXT2_MAX_OPEN=8`) 기반 `ext2_open`/`ext2_read`(direct 블록 경계를 넘는 다중 블록 읽기)/`ext2_size`/`ext2_close`; single/double/triple indirect 해석(`ext2_resolve_block`/`ext2_indirect_lookup`); 중첩 경로 탐색(`ext2_resolve_path`가 세그먼트마다 `ext2_scan_dir` 호출, 예전 `ext2_lookup`의 루트 전용 인라인 순회를 대체 — `ext2_find_in_dir_block`은 그대로 재사용) |
-| `user/init.c` | 수정 | `sys_open`/`sys_lseek` 래퍼 추가; 셸 루프 진입 전 `/disk/hello.txt` 읽어 출력, `/disk/multiblock.txt` 전체 읽어 패턴 검사, `/disk/singleindirect.txt`·`/disk/doubleindirect.txt`를 `lseek`+짧은 `read`로 깊은 오프셋 패턴 검사, `/disk/sub/nested.txt`를 열어 중첩 경로 탐색 검증 |
+| `boot/ext2.c` | 수정 | 슈퍼블록/그룹 디스크립터를 static 전역에 캐싱하는 `ext2_init`; open-file 슬롯 테이블(`g_ofiles`, `EXT2_MAX_OPEN=8`) 기반 `ext2_open`/`ext2_read`(direct 블록 경계를 넘는 다중 블록 읽기)/`ext2_size`/`ext2_close`; single/double/triple indirect 해석(`ext2_resolve_block`/`ext2_indirect_lookup`); 중첩 경로 탐색(`ext2_resolve_path`가 세그먼트마다 `ext2_scan_dir` 호출, 예전 `ext2_lookup`의 루트 전용 인라인 순회를 대체 — `ext2_find_in_dir_block`은 그대로 재사용); `ext2_ofile_t`에 `inode_num`/`refcount` 추가해 `ext2_open`이 같은 inode를 lookup-or-create로 슬롯 공유, `ext2_close`는 refcount 기반 반납으로 변경 |
+| `user/init.c` | 수정 | `sys_open`/`sys_lseek` 래퍼 추가; 셸 루프 진입 전 `/disk/hello.txt` 읽어 출력, `/disk/multiblock.txt` 전체 읽어 패턴 검사, `/disk/singleindirect.txt`·`/disk/doubleindirect.txt`를 `lseek`+짧은 `read`로 깊은 오프셋 패턴 검사, `/disk/sub/nested.txt`를 열어 중첩 경로 탐색 검증, `check_dual_open`으로 같은 ext2 파일을 두 fd로 열어 identity 공유(독립된 `pos`, 한쪽 close 후 나머지 fd 정상 동작)를 검증 |
 | `rootfs/multiblock.txt` | 변경 없음 | 2600바이트, direct 블록 3개 경계 읽기 검증용, 53 최초 커밋에서 그대로 |
 | `rootfs/sub/nested.txt` | 신규 | 중첩 디렉터리 경로 탐색(`ext2_resolve_path`) 검증용 — `/disk/sub/nested.txt` |
 | `rootfs/singleindirect.txt`, `rootfs/doubleindirect.txt` | 신규(생성됨, 미커밋) | `tools/ext2_testgen.py genfiles`가 빌드 타임에 생성 — single/double indirect 경로가 걸리는 크기(20KB/300KB) |
@@ -169,4 +190,4 @@ $
 - `54-getdents`: `ext2_open`이 루트 디렉토리 안의 "파일 이름 하나"만 찾을 수 있고, 디렉토리 자체를 열어 엔트리 목록을 얻는 경로는 아직 없다 — `getdents` syscall과 `ls`가 이 경로를 필요로 한다. 지금 `ext2_lookup`이 이미 디렉토리 엔트리를 순회하는 로직을 갖고 있으니 그걸 노출하는 형태가 될 것이다.
 - **서브디렉토리 지원 완료**: `ext2_resolve_path`가 `/`로 나눈 세그먼트마다 `ext2_scan_dir`을 반복 호출해 중첩 경로를 해석한다(위 "중첩 디렉터리 경로 탐색" 절 참고). `..`/`.`은 디렉터리 엔트리에 그대로 들어있는 특수 이름이라 별도 처리 없이도 `ext2_scan_dir`이 찾아내지만, 셸이나 `sys_getcwd`가 그걸 실제로 활용하는 경로는 아직 없다.
 - **블록 그룹 1개, 그룹 0만 지원**: 52부터 유지된 한계. `ext2_resolve_block`의 triple indirect 분기는 구현되어 있지만 지금 8MB `disk.img`로는 어떤 실제 파일도 그 경로를 밟지 않는다 — 실제 64MB+ 파일로 검증하려면 멀티 그룹(그룹별 inode 테이블 조회)을 먼저 구현해야 한다. 멀티 그룹을 지원하게 되면 그때 대용량 파일로 자연스럽게 검증된다.
-- `55-ext2-write`에서 쓰기 경로가 추가되면 지금 `ext2_read`가 참조하는 캐싱된 inode(`g_ofiles[i].inode`)가 파일 크기 변경 등으로 stale해질 수 있다는 점을 염두에 둬야 한다 — 지금은 읽기 전용이라 문제되지 않는다.
+- **inode identity는 공유되지만 coherency는 아직 없음**: `ext2_open`이 이제 같은 inode 번호면 슬롯을 공유하므로(위 "open-file 테이블과 inode identity 공유" 참고) 여러 fd가 항상 최신 `i_size`/`i_block[]`을 같이 본다 — 슬롯 자체가 하나니까. 하지만 `55-ext2-write`에서 쓰기가 생기면 얘기가 또 하나 남는다: 쓰기가 인메모리 `g_ofiles[i].inode`만 갱신하고 디스크에 flush를 안 하거나, 혹은 여러 슬롯이 여전히 남아있는 경우(예: 슬롯이 가득 차 같은 파일이 서로 다른 슬롯에 중복 캐싱된 상태) 등 55 자신이 새로 신경 써야 할 쓰기 특유의 coherency 문제가 있다는 점을 염두에 둘 것.

@@ -86,6 +86,8 @@ typedef struct __attribute__((packed)) {
 
 typedef struct {
     int          used;
+    u32          inode_num;
+    u32          refcount;
     ext2_inode_t inode;
 } ext2_ofile_t;
 
@@ -345,9 +347,18 @@ int ext2_open(const char *path)
     if (ext2_resolve_path(fs, path, &inode_num) != 0) return -1;
 
     for (i = 0U; i < EXT2_MAX_OPEN; i++) {
+        if (fs->ofiles[i].used && fs->ofiles[i].inode_num == inode_num) {
+            fs->ofiles[i].refcount++;
+            return (int)i;
+        }
+    }
+
+    for (i = 0U; i < EXT2_MAX_OPEN; i++) {
         if (!fs->ofiles[i].used) {
             if (ext2_read_inode(fs, inode_num, &fs->ofiles[i].inode) != 0) return -1;
-            fs->ofiles[i].used = 1;
+            fs->ofiles[i].used      = 1;
+            fs->ofiles[i].inode_num = inode_num;
+            fs->ofiles[i].refcount  = 1U;
             return (int)i;
         }
     }
@@ -410,6 +421,8 @@ void ext2_close(int bfd)
 {
     ext2_fs_t *fs = &g_fs;
 
-    if (bfd < 0 || (u32)bfd >= EXT2_MAX_OPEN) return;
-    fs->ofiles[bfd].used = 0;
+    if (bfd < 0 || (u32)bfd >= EXT2_MAX_OPEN || !fs->ofiles[bfd].used) return;
+
+    fs->ofiles[bfd].refcount--;
+    if (fs->ofiles[bfd].refcount == 0U) fs->ofiles[bfd].used = 0;
 }

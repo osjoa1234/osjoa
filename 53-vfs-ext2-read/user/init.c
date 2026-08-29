@@ -128,6 +128,62 @@ static void check_indirect_probe(const char *path, unsigned int off)
     writes(ok ? "content OK\n" : "content MISMATCH\n");
 }
 
+#define DUAL_OPEN_BUF_MAX 32U
+
+static void check_dual_open(const char *path, const char *expected)
+{
+    char         buf1[DUAL_OPEN_BUF_MAX];
+    char         buf2[DUAL_OPEN_BUF_MAX];
+    long         fd1;
+    long         fd2;
+    unsigned int expected_len;
+    unsigned int n;
+    unsigned int ok;
+    unsigned int i;
+
+    expected_len = slen(expected);
+    fd1 = sys_open(path);
+    fd2 = sys_open(path);
+    if (fd1 < 0 || fd2 < 0) {
+        writes("shell: ext2 dual-open ");
+        writes(path);
+        writes(" failed\n");
+        if (fd1 >= 0) sys_close((unsigned int)fd1);
+        if (fd2 >= 0) sys_close((unsigned int)fd2);
+        return;
+    }
+
+    n = sys_read((unsigned int)fd1, buf1, DUAL_OPEN_BUF_MAX);
+    ok = (n == expected_len) ? 1U : 0U;
+
+    n = sys_read((unsigned int)fd2, buf2, DUAL_OPEN_BUF_MAX);
+    if (n != expected_len) ok = 0U;
+
+    if (ok) {
+        for (i = 0U; i < expected_len; i++) {
+            if (buf1[i] != expected[i] || buf2[i] != expected[i]) { ok = 0U; break; }
+        }
+    }
+
+    sys_close((unsigned int)fd1);
+
+    sys_lseek((unsigned int)fd2, 0L, U_SEEK_SET);
+    n = sys_read((unsigned int)fd2, buf2, DUAL_OPEN_BUF_MAX);
+    if (n != expected_len) ok = 0U;
+    else {
+        for (i = 0U; i < expected_len; i++) {
+            if (buf2[i] != expected[i]) { ok = 0U; break; }
+        }
+    }
+
+    sys_close((unsigned int)fd2);
+
+    writes("shell: ext2 dual-open ");
+    writes(path);
+    writes(": ");
+    writes(ok ? "OK\n" : "MISMATCH\n");
+}
+
 #define SHELL_ARGV_MAX  8U
 #define SHELL_STAGE_MAX 3U
 
@@ -221,6 +277,8 @@ void _start(void)
 
     check_indirect_probe("/disk/singleindirect.txt", SINGLE_INDIRECT_PROBE_OFF);
     check_indirect_probe("/disk/doubleindirect.txt", DOUBLE_INDIRECT_PROBE_OFF);
+
+    check_dual_open("/disk/hello.txt", "hello ext2 root fs\n");
 
     fd = sys_open("/disk/sub/nested.txt");
     if (fd < 0) {
