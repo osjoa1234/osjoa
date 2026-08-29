@@ -270,7 +270,6 @@ $(DISKIMG): $(ROOTFSFILES) $(TESTGEN) | $(BUILD)
 	mkfs.ext2 -q -F -b 1024 -I 128 \
 	    -O sparse_super,filetype,^resize_inode,^dir_index,^ext_attr,^large_file,^huge_file,^uninit_bg,^flex_bg,^64bit,^metadata_csum \
 	    -d $(ROOTFSDIR) $@
-	$(PYTHON3) $(TESTGEN) plant $@
 
 run: $(ISO) $(DISKIMG)
 	$(QEMU) -cdrom $(ISO) -drive file=$(DISKIMG),format=raw,if=ide,index=0

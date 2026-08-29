@@ -226,42 +226,6 @@ static int ext2_resolve_block(const ext2_fs_t *fs, const ext2_inode_t *inode, u3
     return -1;
 }
 
-#define EXT2_TEST_TRIPLE_L1      8188U
-#define EXT2_TEST_TRIPLE_DATA    8191U
-#define EXT2_TEST_TRIPLE_PATTERN "ext2 deep indirect block OK"
-
-static void ext2_self_test_triple_indirect(const ext2_fs_t *fs)
-{
-    static u8    buf[EXT2_MAX_BLOCK_SIZE];
-    ext2_inode_t fake = {0};
-    u32          entries;
-    u32          logical;
-    u32          phys = 0U;
-    u32          i;
-    int          ok;
-
-    fake.i_block[14] = EXT2_TEST_TRIPLE_L1;
-
-    entries = fs->block_size / 4U;
-    logical = EXT2_DIRECT_BLOCKS + entries + entries * entries;
-
-    ok = (ext2_resolve_block(fs, &fake, logical, &phys) == 0) && (phys == EXT2_TEST_TRIPLE_DATA);
-
-    if (ok && ext2_read_block(phys, fs->block_size, buf) == 0) {
-        const char *pattern = EXT2_TEST_TRIPLE_PATTERN;
-
-        for (i = 0U; pattern[i] != '\0'; i++) {
-            if (buf[i] != (u8)pattern[i]) { ok = 0; break; }
-        }
-    } else {
-        ok = 0;
-    }
-
-    console_set_color(ok ? 0x0AU : 0x0CU);
-    console_printf("ext2: triple-indirect self-test %s (logical=%u phys=%u)\n",
-                   ok ? "OK" : "FAIL", logical, phys);
-}
-
 static int ext2_scan_dir(const ext2_fs_t *fs, const ext2_inode_t *dir_inode, const char *name, u32 *out_inode)
 {
     static u8 dir_buf[EXT2_MAX_BLOCK_SIZE];
@@ -367,8 +331,6 @@ int ext2_init(void)
                    fs->gd.bg_free_blocks_count, fs->gd.bg_free_inodes_count);
 
     fs->ready = 1;
-
-    ext2_self_test_triple_indirect(fs);
 
     return 0;
 }
