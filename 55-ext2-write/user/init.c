@@ -478,6 +478,22 @@ void _start(void)
 
     {
         static char argv0[] = "busybox";
+        static char argv1[] = "touch";
+        static char argv2[] = "/disk/touched.txt";
+        char *touch_argv[4];
+
+        touch_argv[0] = argv0;
+        touch_argv[1] = argv1;
+        touch_argv[2] = argv2;
+        touch_argv[3] = 0;
+
+        writes("shell: busybox touch /disk/touched.txt:\n");
+        run_argv(touch_argv);
+    }
+    check_getdents("/disk/", "touched.txt");
+
+    {
+        static char argv0[] = "busybox";
         static char argv1[] = "ls";
         static char argv2[] = "/disk";
         char *ls_argv[4];

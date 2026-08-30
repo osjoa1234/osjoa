@@ -38,7 +38,8 @@ enum {
     SYS_ARCH_PRCTL   = 158,
     SYS_SET_TID_ADDRESS = 218,
     SYS_GETDENTS64   = 217,
-    SYS_EXIT_GROUP   = 231
+    SYS_EXIT_GROUP   = 231,
+    SYS_UTIMENSAT    = 280
 };
 
 extern u64 syscall_kernel_rsp;

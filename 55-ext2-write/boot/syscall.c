@@ -42,6 +42,16 @@ static u32 sys_access(const char *path)
     return 0U;
 }
 
+static u64 sys_utimensat(const char *path)
+{
+    vfs_file_t *f = vfs_open(path, 0U);
+
+    if (!f) return (u64)-2LL;
+
+    vfs_close(f);
+    return 0U;
+}
+
 static u32 sys_chdir(const char *path)
 {
     (void)path;
@@ -451,6 +461,9 @@ void syscall_dispatch(struct interrupt_frame *frame)
         break;
     case SYS_EXIT_GROUP:
         proc_exit((u32)frame->rdi);
+        break;
+    case SYS_UTIMENSAT:
+        frame->rax = sys_utimensat((const char *)frame->rsi);
         break;
     default:
         console_printf("syscall: unimplemented rax=%u\n", (u32)frame->rax);
