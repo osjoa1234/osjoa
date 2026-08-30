@@ -418,24 +418,110 @@ static u32 ext2_alloc_inode(ext2_fs_t *fs)
     return inode_num;
 }
 
-static int ext2_get_or_alloc_block(ext2_fs_t *fs, ext2_inode_t *inode, u32 logical, u32 *out_phys)
+static int ext2_indirect_get_or_alloc(ext2_fs_t *fs, ext2_inode_t *inode, u32 *block_num, u32 index, u32 *out_phys)
 {
+    static u8 buf[EXT2_MAX_BLOCK_SIZE];
+    u32 *ptrs;
     u32 phys;
 
-    if (logical >= EXT2_DIRECT_BLOCKS) return -1;
+    if (*block_num == 0U) {
+        phys = ext2_alloc_block(fs);
+        if (phys == 0U) return -1;
+        *block_num = phys;
+        inode->i_blocks += fs->block_size / ATA_SECTOR_SIZE;
+    }
 
-    if (inode->i_block[logical] != 0U) {
-        *out_phys = inode->i_block[logical];
+    if (ext2_read_block(*block_num, fs->block_size, buf) != 0) return -1;
+    ptrs = (u32 *)buf;
+
+    if (ptrs[index] != 0U) {
+        *out_phys = ptrs[index];
         return 0;
     }
 
     phys = ext2_alloc_block(fs);
     if (phys == 0U) return -1;
 
-    inode->i_block[logical] = phys;
+    ptrs[index] = phys;
+    if (ext2_write_block(*block_num, fs->block_size, buf) != 0) return -1;
     inode->i_blocks += fs->block_size / ATA_SECTOR_SIZE;
+
     *out_phys = phys;
     return 0;
+}
+
+static int ext2_get_or_alloc_block(ext2_fs_t *fs, ext2_inode_t *inode, u32 logical, u32 *out_phys)
+{
+    u32 entries    = fs->block_size / 4U;
+    u32 single_max = EXT2_DIRECT_BLOCKS + entries;
+    u32 double_max = single_max + entries * entries;
+    u32 triple_max = double_max + entries * entries * entries;
+    u32 phys;
+
+    if (logical < EXT2_DIRECT_BLOCKS) {
+        if (inode->i_block[logical] != 0U) {
+            *out_phys = inode->i_block[logical];
+            return 0;
+        }
+
+        phys = ext2_alloc_block(fs);
+        if (phys == 0U) return -1;
+
+        inode->i_block[logical] = phys;
+        inode->i_blocks += fs->block_size / ATA_SECTOR_SIZE;
+        *out_phys = phys;
+        return 0;
+    }
+
+    if (logical < single_max) {
+        u32 idx = logical - EXT2_DIRECT_BLOCKS;
+        u32 ind_block = inode->i_block[12];
+
+        if (ext2_indirect_get_or_alloc(fs, inode, &ind_block, idx, &phys) != 0) return -1;
+        inode->i_block[12] = ind_block;
+
+        *out_phys = phys;
+        return 0;
+    }
+
+    if (logical < double_max) {
+        u32 idx         = logical - single_max;
+        u32 outer_idx   = idx / entries;
+        u32 inner_idx   = idx % entries;
+        u32 outer_block = inode->i_block[13];
+        u32 inner_block;
+
+        if (ext2_indirect_get_or_alloc(fs, inode, &outer_block, outer_idx, &inner_block) != 0) return -1;
+        inode->i_block[13] = outer_block;
+
+        if (ext2_indirect_get_or_alloc(fs, inode, &inner_block, inner_idx, &phys) != 0) return -1;
+
+        *out_phys = phys;
+        return 0;
+    }
+
+    if (logical < triple_max) {
+        u32 idx         = logical - double_max;
+        u32 outer_idx   = idx / (entries * entries);
+        u32 rem         = idx % (entries * entries);
+        u32 mid_idx     = rem / entries;
+        u32 inner_idx   = rem % entries;
+        u32 outer_block = inode->i_block[14];
+        u32 mid_block;
+        u32 inner_block;
+
+        if (ext2_indirect_get_or_alloc(fs, inode, &outer_block, outer_idx, &mid_block) != 0) return -1;
+        inode->i_block[14] = outer_block;
+
+        if (ext2_indirect_get_or_alloc(fs, inode, &mid_block, mid_idx, &inner_block) != 0) return -1;
+
+        if (ext2_indirect_get_or_alloc(fs, inode, &inner_block, inner_idx, &phys) != 0) return -1;
+
+        *out_phys = phys;
+        return 0;
+    }
+
+    return -1;
 }
 
 #define EXT2_DIRENT_HDR 8U
@@ -713,15 +799,18 @@ u32 ext2_read(int bfd, u8 *buf, u32 len, u32 pos)
         block_off   = (pos + total) % fs->block_size;
 
         if (ext2_resolve_block(fs, &f->inode, block_index, &phys_block) != 0) break;
-        if (phys_block == 0U) break;
-
-        if (ext2_read_block(phys_block, fs->block_size, block_buf) != 0) break;
 
         chunk = fs->block_size - block_off;
         if (chunk > len - total) chunk = len - total;
 
-        for (i = 0U; i < chunk; i++) {
-            buf[total + i] = block_buf[block_off + i];
+        if (phys_block == 0U) {
+            for (i = 0U; i < chunk; i++) buf[total + i] = 0U;
+        } else {
+            if (ext2_read_block(phys_block, fs->block_size, block_buf) != 0) break;
+
+            for (i = 0U; i < chunk; i++) {
+                buf[total + i] = block_buf[block_off + i];
+            }
         }
 
         total += chunk;
