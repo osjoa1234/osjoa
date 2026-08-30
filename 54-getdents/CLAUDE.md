@@ -168,7 +168,7 @@ $
 | 파일 | 상태 | 설명 |
 |------|------|------|
 | `boot/vfs.h` | 수정 | `vfs_ops_t`에 `getdents`/`mode` 필드 추가; `vfs_getdents`/`vfs_mode`/`vfs_size` 선언 추가 |
-| `boot/vfs.c` | 수정 | `smatch`를 "매치 여부"에서 "몇 바이트를 건너뛸지"로 확장해 마운트 포인트 자체(`/disk`, 트레일링 슬래시 없이)도 열리게 수정(`slen` 제거, 호출부는 `skip` 사용); `vfs_getdents`/`vfs_mode`/`vfs_size` 구현 |
+| `boot/vfs.c` | 수정 | `smatch`를 "매치 여부"에서 "몇 바이트를 건너뛸지"로 확장해 마운트 포인트 자체(`/disk`, 트레일링 슬래시 없이)도 열리게 수정(`slen` 제거, 호출부는 `skip` 사용); `vfs_getdents`/`vfs_mode`/`vfs_size` 구현; `vfs_open`이 prefix를 다 뗀 나머지가 빈 문자열이면 `"/"`를 대신 백엔드 `open()`에 넘기도록 수정(아래 "다음 단계 힌트" 참고) |
 | `boot/ext2.h` | 수정 | `ext2_getdents`/`ext2_mode` 선언 추가 |
 | `boot/ext2.c` | 수정 | `ext2_dtype`(ext2 `file_type` → 리눅스 `DT_*` 매핑), `ext2_getdents`(디렉토리 바이트 오프셋 커서 기반으로 `linux_dirent64` ABI를 유저 버퍼에 직렬화), `ext2_mode`(캐싱된 inode의 `i_mode` 그대로 반환) 추가 |
 | `boot/initrd.h` | 수정 | `initrd_mode` 선언 추가 |
@@ -188,3 +188,4 @@ $
 - **`getdents`가 direct 블록만 검증됐다**: `ext2_resolve_block`을 재사용하므로 이론적으로 indirect 디렉토리 블록도 처리는 되지만, 지금 테스트 디렉토리(`rootfs/`, `rootfs/sub/`)는 전부 direct 블록 12개 안에 들어가는 크기라 indirect 디렉토리 블록 경로는 53의 triple indirect와 같은 이유로 실제 데이터로는 검증되지 않았다.
 - **`stat`/`fstat`이 여전히 uid/gid/타임스탬프를 0으로만 채운다**: `busybox ls -l`처럼 이 필드들을 실제로 보여주는 명령을 쓰면 전부 `1970-01-01`/`uid 0`으로 나온다 — 이 커널에 아직 사용자/시간 개념이 없어서다. 나중에 타이머(`15-pit-timer`)나 RTC를 `st_*time`에 연결하거나 사용자/권한 모델이 생기면 그때 채울 자리다.
 - **모든 syscall 실패가 여전히 `-1`(EPERM) 하나로 뭉개진다**: `sys_stat`이 `vfs_open` 실패 시 반환하는 값도 마찬가지다(존재하지 않는 경로든 권한 문제든 구분 없이 `-1`). 53의 다음 단계 힌트에서 이미 지적된 채로 남아있다 — `ENOENT`/`ENOTDIR` 등 errno 구분이 필요해지면 그때 다룰 것.
+- **`vfs_open`의 마운트 포인트 매치는 여전히 문자열 레벨 땜빵이다**: `smatch`가 "prefix 전체 매치" 외에 "트레일링 슬래시 하나 뺀 매치"를 특수 케이스로 처리하고, 그렇게 매치돼 나머지 문자열이 비면 `vfs_open`이 `"/"`를 대신 넘기는 것도 마찬가지로 특수 케이스다. 리눅스는 이 문제 자체가 구조적으로 발생하지 않는다 — VFS 코어가 경로를 컴포넌트 단위로 잘라 dentry 트리를 순회하고(`lookup(dir_inode, name)`을 컴포넌트마다 호출), 마운트 지점을 만나면 경로가 거기서 끝나든 안 끝나든 상관없이 해당 `vfsmount`의 캐시된 루트 dentry(`mnt_root`)로 무조건 건너뛰기 때문에 "prefix를 다 뗀 나머지가 빈 문자열"이라는 상황 자체가 생기지 않는다. 우리 쪽에서 이걸 구조적으로 고치려면 `vfs_ops_t.open(path)`(경로 문자열 전체를 백엔드에 넘기는 지금 인터페이스)를 `lookup(parent, name)`(컴포넌트 하나씩 넘기는 인터페이스)로 바꾸고 `vfs_open`이 직접 컴포넌트 순회 + 마운트 크로싱을 수행하는 구조로 재설계해야 한다 — `initrd`/`ext2`/`console`/`pipe` 백엔드 전부의 인터페이스가 바뀌는 큰 리팩터링이라 이번 로드맵엔 없다. 필요해지면(디렉토리 트리 기반 VFS로 전환하는 별도 단계가 생기면) 그때 다룰 것.

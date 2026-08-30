@@ -50,7 +50,8 @@ vfs_file_t *vfs_open(const char *path)
         const char *pfx = mounts[i].prefix;
         u32         skip;
         if (smatch(path, pfx, &skip)) {
-            int bfd = mounts[i].ops->open(path + skip);
+            const char *rest = path + skip;
+            int         bfd  = mounts[i].ops->open(rest[0] ? rest : "/");
             if (bfd >= 0) {
                 vfs_file_t *f = (vfs_file_t *)kmalloc(sizeof(vfs_file_t));
                 if (!f) { mounts[i].ops->close(bfd); return 0; }
