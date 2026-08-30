@@ -363,21 +363,28 @@ static int ext2_flush_gd(ext2_fs_t *fs)
 static u32 ext2_bitmap_alloc(const ext2_fs_t *fs, u32 bitmap_block, u32 max_bits)
 {
     static u8 buf[EXT2_MAX_BLOCK_SIZE];
-    u32 i;
+    u32 *words = (u32 *)buf;
+    u32 num_words = (max_bits + 31U) / 32U;
+    u32 w;
 
-    if (ext2_read_block(bitmap_block, fs->block_size, buf) != 0) return 0U;
+    if (ext2_read_block(bitmap_block, fs->block_size, buf) != 0) return max_bits;
 
-    for (i = 0U; i < max_bits; i++) {
-        u32 byte_idx = i / 8U;
-        u32 bit_idx  = i % 8U;
+    for (w = 0U; w < num_words; w++) {
+        u32 word = words[w];
+        u32 bit_in_word;
+        u32 i;
 
-        if (!(buf[byte_idx] & (u8)(1U << bit_idx))) {
-            buf[byte_idx] |= (u8)(1U << bit_idx);
-            if (ext2_write_block(bitmap_block, fs->block_size, buf) != 0) return 0U;
-            return i + 1U;
-        }
+        if (word == 0xFFFFFFFFU) continue;
+
+        bit_in_word = (u32)__builtin_ctz(~word);
+        i = w * 32U + bit_in_word;
+        if (i >= max_bits) return max_bits;
+
+        words[w] |= (1U << bit_in_word);
+        if (ext2_write_block(bitmap_block, fs->block_size, buf) != 0) return max_bits;
+        return i;
     }
-    return 0U;
+    return max_bits;
 }
 
 static u32 ext2_alloc_block(ext2_fs_t *fs)
@@ -388,9 +395,9 @@ static u32 ext2_alloc_block(ext2_fs_t *fs)
     if (fs->gd.bg_free_blocks_count == 0U) return 0U;
 
     bit = ext2_bitmap_alloc(fs, fs->gd.bg_block_bitmap, fs->sb.s_blocks_per_group);
-    if (bit == 0U) return 0U;
+    if (bit == fs->sb.s_blocks_per_group) return 0U;
 
-    phys = fs->sb.s_first_data_block + (bit - 1U);
+    phys = fs->sb.s_first_data_block + bit;
 
     fs->gd.bg_free_blocks_count--;
     fs->sb.s_free_blocks_count--;
@@ -403,12 +410,15 @@ static u32 ext2_alloc_block(ext2_fs_t *fs)
 
 static u32 ext2_alloc_inode(ext2_fs_t *fs)
 {
+    u32 bit;
     u32 inode_num;
 
     if (fs->gd.bg_free_inodes_count == 0U) return 0U;
 
-    inode_num = ext2_bitmap_alloc(fs, fs->gd.bg_inode_bitmap, fs->sb.s_inodes_per_group);
-    if (inode_num == 0U) return 0U;
+    bit = ext2_bitmap_alloc(fs, fs->gd.bg_inode_bitmap, fs->sb.s_inodes_per_group);
+    if (bit == fs->sb.s_inodes_per_group) return 0U;
+
+    inode_num = bit + 1U;
 
     fs->gd.bg_free_inodes_count--;
     fs->sb.s_free_inodes_count--;
