@@ -104,7 +104,8 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 55 | `55-ext2-write` | ext2 쓰기 — 블록/inode 비트맵 할당기, 파일 생성/확장(direct 블록 포인터 갱신), 디렉토리 엔트리 추가 — `>` 리다이렉션의 전제조건 |
 | 56 | `56-mkdir-unlink` | `mkdir`(디렉토리 inode + 블록 할당 + `.`/`..` 엔트리) / `unlink` |
 | 57 | `57-symlink` | ext2에 `S_IFLNK` inode 타입 쓰기 지원 — `symlink(2)`로 생성, `readlink(2)`로 읽기, 경로 탐색이 심링크를 따라가도록 확장. `proc_exec`는 아직 안 건드림 — 커널 레벨 자체 검증만 |
-| 58 | `58-exec-vfs-symlink` | `proc_exec`를 initrd 직접 조회에서 VFS 경유로 리팩터링해 심링크를 따라가는 실행 경로 완성 — `busybox`를 `cat`/`ls` 등으로 심링크해 멀티콜 바이너리로 동작 검증(`54-getdents`에서 발견한 "ash가 `$PATH`에서 `cat` 실행 파일을 못 찾는" 한계의 해결책) |
+| 58 | `58-envp` | 커널이 `execve` 시 유저 스택에 진짜 `envp`를 실어주고 유저공간이 `environ`/`getenv`로 접근하게 함 — `PATH` 등 환경변수를 실제로 활용하는 건 59로 미루고, 이번 단계는 환경변수 전달 배관 자체(스택 레이아웃, `SYS_EXECVE`의 `envp` 인자, `getenv`)만 검증 |
+| 59 | `59-exec-vfs-symlink` | `proc_exec`를 initrd 직접 조회에서 VFS 경유로 리팩터링해 심링크를 따라가는 실행 경로 완성 + 58의 `envp`로 진짜 `PATH` 환경변수 기반 명령 탐색 구현 — `busybox`를 `cat`/`ls`/`sh`/`touch`/`mkdir`/`rm` 등으로 심링크해 멀티콜 바이너리로 동작 검증, `busybox sh`(ash) 내부에서도 짧은 이름으로 동작하는지까지 확인(`54-getdents`에서 발견한 "ash가 `$PATH`에서 `cat` 실행 파일을 못 찾는" 한계의 진짜 해결책) |
 
 12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → Linux ABI 호환 → **37~40에서 64비트 전환** → 외부 바이너리 실행 순서로 기반을 쌓는다.
 
