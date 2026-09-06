@@ -1,0 +1,223 @@
+#include "vfs.h"
+#include "kheap.h"
+
+struct mount_entry {
+    const char *prefix;
+    vfs_ops_t  *ops;
+};
+
+static struct mount_entry mounts[VFS_MOUNT_MAX];
+static u32 nmounts;
+
+void vfs_init(void)
+{
+    nmounts = 0U;
+}
+
+void vfs_mount(const char *prefix, vfs_ops_t *ops)
+{
+    if (nmounts < VFS_MOUNT_MAX) {
+        mounts[nmounts].prefix = prefix;
+        mounts[nmounts].ops    = ops;
+        nmounts++;
+    }
+}
+
+static int smatch(const char *str, const char *prefix, u32 *out_skip)
+{
+    u32 n = 0U;
+
+    while (prefix[n] && str[n] == prefix[n]) n++;
+
+    if (prefix[n] == '\0') {
+        *out_skip = n;
+        return 1;
+    }
+
+    if (prefix[n] == '/' && prefix[n + 1U] == '\0' && str[n] == '\0') {
+        *out_skip = n;
+        return 1;
+    }
+
+    return 0;
+}
+
+vfs_file_t *vfs_open(const char *path, u32 flags)
+{
+    u32 i;
+
+    for (i = 0U; i < nmounts; i++) {
+        const char *pfx = mounts[i].prefix;
+        u32         skip;
+        if (smatch(path, pfx, &skip)) {
+            const char *rest = path + skip;
+            int         bfd  = mounts[i].ops->open(rest[0] ? rest : "/", flags);
+            if (bfd >= 0) {
+                vfs_file_t *f = (vfs_file_t *)kmalloc(sizeof(vfs_file_t));
+                if (!f) { mounts[i].ops->close(bfd); return 0; }
+                f->ops        = mounts[i].ops;
+                f->backend_fd = bfd;
+                f->pos        = 0U;
+                return f;
+            }
+        }
+    }
+    return 0;
+}
+
+vfs_file_t *vfs_dup(vfs_file_t *f)
+{
+    vfs_file_t *n = (vfs_file_t *)kmalloc(sizeof(vfs_file_t));
+    if (!n) return 0;
+    n->ops        = f->ops;
+    n->backend_fd = f->backend_fd;
+    n->pos        = f->pos;
+    if (n->ops->dup) n->ops->dup(n->backend_fd);
+    return n;
+}
+
+u32 vfs_read(vfs_file_t *f, u8 *buf, u32 len)
+{
+    u32 n = f->ops->read(f->backend_fd, buf, len, f->pos);
+    f->pos += n;
+    return n;
+}
+
+u32 vfs_write(vfs_file_t *f, const u8 *buf, u32 len)
+{
+    u32 n;
+    if (!f->ops->write) return 0U;
+    n = f->ops->write(f->backend_fd, buf, len, f->pos);
+    f->pos += n;
+    return n;
+}
+
+u32 vfs_seek(vfs_file_t *f, int offset, u32 whence)
+{
+    u32 newpos;
+    u32 sz;
+
+    switch (whence) {
+    case SEEK_SET:
+        newpos = (u32)offset;
+        break;
+    case SEEK_CUR:
+        newpos = (u32)((int)f->pos + offset);
+        break;
+    case SEEK_END:
+        if (!f->ops->size) return f->pos;
+        sz     = f->ops->size(f->backend_fd);
+        newpos = (u32)((int)sz + offset);
+        break;
+    default:
+        return (u32)-1;
+    }
+    f->pos = newpos;
+    return newpos;
+}
+
+void vfs_close(vfs_file_t *f)
+{
+    f->ops->close(f->backend_fd);
+    kfree(f);
+}
+
+u32 vfs_getdents(vfs_file_t *f, u8 *buf, u32 len)
+{
+    if (!f->ops->getdents) return 0U;
+    return f->ops->getdents(f->backend_fd, buf, len, &f->pos);
+}
+
+u32 vfs_mode(vfs_file_t *f)
+{
+    if (!f->ops->mode) return 0U;
+    return f->ops->mode(f->backend_fd);
+}
+
+u32 vfs_size(vfs_file_t *f)
+{
+    if (!f->ops->size) return 0U;
+    return f->ops->size(f->backend_fd);
+}
+
+int vfs_mkdir(const char *path)
+{
+    u32 i;
+
+    for (i = 0U; i < nmounts; i++) {
+        const char *pfx = mounts[i].prefix;
+        u32         skip;
+        if (smatch(path, pfx, &skip)) {
+            const char *rest = path + skip;
+            if (!mounts[i].ops->mkdir) continue;
+            if (mounts[i].ops->mkdir(rest[0] ? rest : "/") == 0) return 0;
+        }
+    }
+    return -1;
+}
+
+int vfs_unlink(const char *path)
+{
+    u32 i;
+
+    for (i = 0U; i < nmounts; i++) {
+        const char *pfx = mounts[i].prefix;
+        u32         skip;
+        if (smatch(path, pfx, &skip)) {
+            const char *rest = path + skip;
+            if (!mounts[i].ops->unlink) continue;
+            if (mounts[i].ops->unlink(rest[0] ? rest : "/") == 0) return 0;
+        }
+    }
+    return -1;
+}
+
+int vfs_symlink(const char *target, const char *linkpath)
+{
+    u32 i;
+
+    for (i = 0U; i < nmounts; i++) {
+        const char *pfx = mounts[i].prefix;
+        u32         skip;
+        if (smatch(linkpath, pfx, &skip)) {
+            const char *rest = linkpath + skip;
+            if (!mounts[i].ops->symlink) continue;
+            if (mounts[i].ops->symlink(target, rest[0] ? rest : "/") == 0) return 0;
+        }
+    }
+    return -1;
+}
+
+int vfs_readlink(const char *linkpath, char *buf, u32 buf_max)
+{
+    u32 i;
+
+    for (i = 0U; i < nmounts; i++) {
+        const char *pfx = mounts[i].prefix;
+        u32         skip;
+        if (smatch(linkpath, pfx, &skip)) {
+            const char *rest = linkpath + skip;
+            int         n;
+            if (!mounts[i].ops->readlink) continue;
+            n = mounts[i].ops->readlink(rest[0] ? rest : "/", buf, buf_max);
+            if (n >= 0) return n;
+        }
+    }
+    return -1;
+}
+
+int vfs_lstat(const char *path, u32 *out_mode, u32 *out_size)
+{
+    u32 i;
+
+    for (i = 0U; i < nmounts; i++) {
+        const char *pfx = mounts[i].prefix;
+        u32         skip;
+        if (smatch(path, pfx, &skip)) {
+            const char *rest = path + skip;
+            if (!mounts[i].ops->lstat) continue;
+            if (mounts[i].ops->lstat(rest[0] ? rest : "/", out_mode, out_size) == 0) return 0;
+        }
+    }
+    return -1;
+}
