@@ -58,6 +58,7 @@ vfs_file_t *vfs_open(const char *path, u32 flags)
                 f->ops        = mounts[i].ops;
                 f->backend_fd = bfd;
                 f->pos        = 0U;
+                if ((flags & O_APPEND) && f->ops->size) f->pos = f->ops->size(bfd);
                 return f;
             }
         }

@@ -17,8 +17,9 @@ typedef struct {
     u32        pos;
 } vfs_file_t;
 
-#define O_CREAT 0x40U
-#define O_TRUNC 0x200U
+#define O_CREAT  0x40U
+#define O_TRUNC  0x200U
+#define O_APPEND 0x400U
 
 struct vfs_ops {
     int  (*open)(const char *path, u32 flags);

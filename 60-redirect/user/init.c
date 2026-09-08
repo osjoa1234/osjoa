@@ -68,8 +68,9 @@ static long sys_open(const char *path)
     return ret;
 }
 
-#define O_CREAT 0x40L
-#define O_TRUNC 0x200L
+#define O_CREAT  0x40L
+#define O_TRUNC  0x200L
+#define O_APPEND 0x400L
 
 static long sys_creat(const char *path)
 {
@@ -82,6 +83,13 @@ static long sys_creat_trunc(const char *path)
 {
     long ret;
     __asm__ volatile ("syscall" : "=a"(ret) : "a"(2L), "D"(path), "S"(O_CREAT | O_TRUNC), "d"(0644L) : "rcx", "r11", "memory");
+    return ret;
+}
+
+static long sys_creat_append(const char *path)
+{
+    long ret;
+    __asm__ volatile ("syscall" : "=a"(ret) : "a"(2L), "D"(path), "S"(O_CREAT | O_APPEND), "d"(0644L) : "rcx", "r11", "memory");
     return ret;
 }
 
@@ -643,7 +651,7 @@ static void run_argv(char *argv[])
     sys_wait(pid, &exit_code);
 }
 
-static void run_argv_redirect(char *argv[], const char *redirect_path)
+static void run_argv_redirect(char *argv[], const char *redirect_path, unsigned int append)
 {
     unsigned int pid;
     unsigned int exit_code;
@@ -651,7 +659,7 @@ static void run_argv_redirect(char *argv[], const char *redirect_path)
 
     pid = sys_fork();
     if (pid == 0U) {
-        rfd = sys_creat_trunc(redirect_path);
+        rfd = append ? sys_creat_append(redirect_path) : sys_creat_trunc(redirect_path);
         if (rfd < 0) {
             writes("shell: cannot create file\n");
             sys_exit(1U);
@@ -690,13 +698,15 @@ static unsigned int split_argv(char *buf, char *argv[])
 
 static unsigned int split_pipeline(char *argv[], unsigned int argc,
                                     char *stage_argv[][SHELL_ARGV_MAX + 1U],
-                                    char *redirect_out[SHELL_STAGE_MAX])
+                                    char *redirect_out[SHELL_STAGE_MAX],
+                                    unsigned int redirect_append[SHELL_STAGE_MAX])
 {
     unsigned int nstages = 0U;
     unsigned int scount  = 0U;
     unsigned int i;
 
-    redirect_out[0] = 0;
+    redirect_out[0]    = 0;
+    redirect_append[0] = 0U;
 
     for (i = 0U; i < argc; i++) {
         if (streq(argv[i], "|")) {
@@ -704,12 +714,14 @@ static unsigned int split_pipeline(char *argv[], unsigned int argc,
             stage_argv[nstages][scount] = 0;
             nstages++;
             scount = 0U;
-            redirect_out[nstages] = 0;
+            redirect_out[nstages]    = 0;
+            redirect_append[nstages] = 0U;
             continue;
         }
-        if (streq(argv[i], ">")) {
+        if (streq(argv[i], ">") || streq(argv[i], ">>")) {
             if (scount == 0U || i + 1U >= argc || redirect_out[nstages]) return 0U;
-            redirect_out[nstages] = argv[i + 1U];
+            redirect_out[nstages]    = argv[i + 1U];
+            redirect_append[nstages] = streq(argv[i], ">>") ? 1U : 0U;
             i++;
             continue;
         }
@@ -720,6 +732,85 @@ static unsigned int split_pipeline(char *argv[], unsigned int argc,
     stage_argv[nstages][scount] = 0;
     nstages++;
     return nstages;
+}
+
+static void run_line(char *buf)
+{
+    char        *argv[SHELL_ARGV_MAX + 1U];
+    char        *stage_argv[SHELL_STAGE_MAX][SHELL_ARGV_MAX + 1U];
+    char        *redirect_out[SHELL_STAGE_MAX];
+    unsigned int redirect_append[SHELL_STAGE_MAX];
+    int          pipefd[SHELL_STAGE_MAX - 1U][2];
+    unsigned int pid[SHELL_STAGE_MAX];
+    unsigned int argc;
+    unsigned int nstages;
+    unsigned int i;
+    unsigned int j;
+    unsigned int exit_code;
+
+    argc = split_argv(buf, argv);
+    if (argc == 0U) return;
+
+    if (streq(argv[0], "exit")) {
+        writes("shell: bye\n");
+        sys_exit(0U);
+        for (;;) {}
+    }
+
+    nstages = split_pipeline(argv, argc, stage_argv, redirect_out, redirect_append);
+    if (nstages == 0U) {
+        writes("shell: syntax error\n");
+        return;
+    }
+
+    for (i = 0U; i + 1U < nstages; i++) {
+        if (sys_pipe(pipefd[i]) != 0) {
+            writes("shell: pipe failed\n");
+            for (j = 0U; j < i; j++) {
+                sys_close((unsigned int)pipefd[j][0]);
+                sys_close((unsigned int)pipefd[j][1]);
+            }
+            return;
+        }
+    }
+
+    for (i = 0U; i < nstages; i++) {
+        pid[i] = sys_fork();
+        if (pid[i] == 0U) {
+            if (i > 0U)
+                sys_dup2((unsigned int)pipefd[i - 1U][0], 0U);
+            if (i + 1U < nstages)
+                sys_dup2((unsigned int)pipefd[i][1], 1U);
+            for (j = 0U; j + 1U < nstages; j++) {
+                sys_close((unsigned int)pipefd[j][0]);
+                sys_close((unsigned int)pipefd[j][1]);
+            }
+            if (redirect_out[i]) {
+                long rfd = redirect_append[i] ? sys_creat_append(redirect_out[i]) : sys_creat_trunc(redirect_out[i]);
+                if (rfd < 0) {
+                    writes("shell: cannot create file\n");
+                    sys_exit(1U);
+                    for (;;) {}
+                }
+                sys_dup2((unsigned int)rfd, 1U);
+                sys_close((unsigned int)rfd);
+            }
+            exec_path(stage_argv[i], environ);
+            writes("shell: not found\n");
+            sys_exit(1U);
+            for (;;) {}
+        }
+    }
+
+    for (i = 0U; i + 1U < nstages; i++) {
+        sys_close((unsigned int)pipefd[i][0]);
+        sys_close((unsigned int)pipefd[i][1]);
+    }
+
+    for (i = 0U; i < nstages; i++) {
+        exit_code = (unsigned int)-1U;
+        sys_wait(pid[i], &exit_code);
+    }
 }
 
 __asm__(
@@ -736,17 +827,8 @@ void init_main(unsigned long *stack)
     char        **stack_argv = (char **)(stack + 1);
     char         buf[64];
     char         mb_buf[2600];
-    char        *argv[SHELL_ARGV_MAX + 1U];
-    char        *stage_argv[SHELL_STAGE_MAX][SHELL_ARGV_MAX + 1U];
-    char        *redirect_out[SHELL_STAGE_MAX];
-    int          pipefd[SHELL_STAGE_MAX - 1U][2];
-    unsigned int pid[SHELL_STAGE_MAX];
-    unsigned int argc;
-    unsigned int nstages;
     unsigned int n;
     unsigned int i;
-    unsigned int j;
-    unsigned int exit_code;
     unsigned int ok;
     long         fd;
 
@@ -959,7 +1041,7 @@ void init_main(unsigned long *stack)
         echo_argv[2] = 0;
 
         writes("shell: echo aaaaaaaaaa > /disk/redir.txt:\n");
-        run_argv_redirect(echo_argv, "/disk/redir.txt");
+        run_argv_redirect(echo_argv, "/disk/redir.txt", 0U);
     }
 
     {
@@ -985,7 +1067,7 @@ void init_main(unsigned long *stack)
         echo_argv[2] = 0;
 
         writes("shell: echo bb > /disk/redir.txt (O_TRUNC check):\n");
-        run_argv_redirect(echo_argv, "/disk/redir.txt");
+        run_argv_redirect(echo_argv, "/disk/redir.txt", 0U);
     }
 
     {
@@ -1001,6 +1083,45 @@ void init_main(unsigned long *stack)
         run_argv(cat_argv);
     }
 
+    {
+        static char argv0[] = "echo";
+        static char argv1[] = "cc";
+        char *echo_argv[3];
+
+        echo_argv[0] = argv0;
+        echo_argv[1] = argv1;
+        echo_argv[2] = 0;
+
+        writes("shell: echo cc >> /disk/redir.txt (O_APPEND check):\n");
+        run_argv_redirect(echo_argv, "/disk/redir.txt", 1U);
+    }
+
+    {
+        static char argv0[] = "cat";
+        static char argv1[] = "/disk/redir.txt";
+        char *cat_argv[3];
+
+        cat_argv[0] = argv0;
+        cat_argv[1] = argv1;
+        cat_argv[2] = 0;
+
+        writes("shell: cat /disk/redir.txt:\n");
+        run_argv(cat_argv);
+    }
+
+    {
+        static char line1[] = "echo dd > /disk/redir2.txt";
+        static char line2[] = "echo ee >> /disk/redir2.txt";
+        static char line3[] = "cat /disk/redir2.txt";
+
+        writes("shell: echo dd > /disk/redir2.txt:\n");
+        run_line(line1);
+        writes("shell: echo ee >> /disk/redir2.txt:\n");
+        run_line(line2);
+        writes("shell: cat /disk/redir2.txt:\n");
+        run_line(line3);
+    }
+
     for (;;) {
         writes("$ ");
         n = sys_read(0U, buf, 63U);
@@ -1009,70 +1130,6 @@ void init_main(unsigned long *stack)
         if (n > 0U && buf[n - 1U] == '\n') { buf[n - 1U] = '\0'; n--; }
         if (n == 0U) continue;
 
-        argc = split_argv(buf, argv);
-        if (argc == 0U) continue;
-
-        if (streq(argv[0], "exit")) {
-            writes("shell: bye\n");
-            sys_exit(0U);
-            for (;;) {}
-        }
-
-        nstages = split_pipeline(argv, argc, stage_argv, redirect_out);
-        if (nstages == 0U) {
-            writes("shell: syntax error\n");
-            continue;
-        }
-
-        for (i = 0U; i + 1U < nstages; i++) {
-            if (sys_pipe(pipefd[i]) != 0) {
-                writes("shell: pipe failed\n");
-                for (j = 0U; j < i; j++) {
-                    sys_close((unsigned int)pipefd[j][0]);
-                    sys_close((unsigned int)pipefd[j][1]);
-                }
-                nstages = 0U;
-                break;
-            }
-        }
-        if (nstages == 0U) continue;
-
-        for (i = 0U; i < nstages; i++) {
-            pid[i] = sys_fork();
-            if (pid[i] == 0U) {
-                if (i > 0U)
-                    sys_dup2((unsigned int)pipefd[i - 1U][0], 0U);
-                if (i + 1U < nstages)
-                    sys_dup2((unsigned int)pipefd[i][1], 1U);
-                for (j = 0U; j + 1U < nstages; j++) {
-                    sys_close((unsigned int)pipefd[j][0]);
-                    sys_close((unsigned int)pipefd[j][1]);
-                }
-                if (redirect_out[i]) {
-                    long rfd = sys_creat_trunc(redirect_out[i]);
-                    if (rfd < 0) {
-                        writes("shell: cannot create file\n");
-                        sys_exit(1U);
-                        for (;;) {}
-                    }
-                    sys_dup2((unsigned int)rfd, 1U);
-                    sys_close((unsigned int)rfd);
-                }
-                exec_path(stage_argv[i], environ);
-                writes("shell: not found\n");
-                sys_exit(1U);
-                for (;;) {}
-            }
-        }
-
-        for (i = 0U; i + 1U < nstages; i++) {
-            sys_close((unsigned int)pipefd[i][0]);
-            sys_close((unsigned int)pipefd[i][1]);
-        }
-
-        for (i = 0U; i < nstages; i++) {
-            exit_code = (unsigned int)-1U;
-            sys_wait(pid[i], &exit_code);
-        }
+        run_line(buf);
     }
 }
