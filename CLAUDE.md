@@ -107,8 +107,27 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 58 | `58-envp` | 커널이 `execve` 시 유저 스택에 진짜 `envp`를 실어주고 유저공간이 `environ`/`getenv`로 접근하게 함 — `PATH` 등 환경변수를 실제로 활용하는 건 59로 미루고, 이번 단계는 환경변수 전달 배관 자체(스택 레이아웃, `SYS_EXECVE`의 `envp` 인자, `getenv`)만 검증 |
 | 59 | `59-exec-vfs-symlink` | `proc_exec`를 initrd 직접 조회에서 VFS 경유로 리팩터링해 심링크를 따라가는 실행 경로 완성 + 58의 `envp`로 진짜 `PATH` 환경변수 기반 명령 탐색 구현 — `busybox`를 `cat`/`ls`/`sh`/`touch`/`mkdir`/`rm` 등으로 심링크해 멀티콜 바이너리로 동작 검증, `busybox sh`(ash) 내부에서도 짧은 이름으로 동작하는지까지 확인(`54-getdents`에서 발견한 "ash가 `$PATH`에서 `cat` 실행 파일을 못 찾는" 한계의 진짜 해결책) |
 | 60 | `60-redirect` | 셸에 `>` 파일 리다이렉션 추가 — ext2 `O_TRUNC` 구현 + `split_pipeline`의 `>` 토큰 파싱 + fork 자식에서의 `dup2` 배선 (`48-pipe`가 "쓰기 가능한 FS가 없어서" 미뤄뒀던 것을 55/59 이후 마무리) |
+| 61 | `61-io-lock` | ext2/ATA 동시 접근에 락 없음 버그 수정 — 디스크 I/O 경로(ATA PIO 컨트롤러 접근, ext2 스캐치 버퍼)에 스핀락 또는 요청 직렬화 큐 도입 (`60-redirect`에서 발견) |
+| 62 | `62-redirect-in` | 셸에 `<` 입력 리다이렉션 추가 — `redirect_out`/`redirect_append`와 나란히 `redirect_in` 파싱, fork 자식에서 `O_RDONLY` open 후 fd 0으로 `dup2` |
+| 63 | `63-pci-enum` | PCI 버스 스캔(config space I/O 포트 0xCF8/0xCFC) — vendor/device ID로 연결된 디바이스 나열 |
+| 64 | `64-ahci` | PCI 기반 AHCI(SATA) 드라이버로 `51-ata-pio`의 ATA PIO 대체 — 실제 서버/VM 표준 디스크 경로로 전환 |
+| 65 | `65-apic` | Local APIC + IOAPIC로 `10-interrupts`의 PIC 리맵 대체 — MSI/SMP 전제조건 마련 |
+| 66 | `66-nic-rtl8139` | PCI 기반 rtl8139 NIC 드라이버 — 레지스터 초기화, 패킷 송수신(raw 이더넷 프레임 loopback으로 드라이버만 검증) |
+| 67 | `67-ethernet-arp` | 이더넷 프레임 파싱 + ARP 요청/응답 |
+| 68 | `68-ip-icmp` | IPv4 헤더 처리 + ICMP — `ping` 응답으로 검증 |
+| 69 | `69-udp` | UDP 송수신 |
+| 70 | `70-tcp` | TCP 상태 머신(3-way handshake, 데이터 전송, 종료) |
+| 71 | `71-socket-syscall` | BSD 소켓 syscall(`socket`/`bind`/`listen`/`accept`/`connect`/`send`/`recv`) 유저 공간 노출 |
+| 72 | `72-net-apps` | busybox `nc`/`wget` 등으로 실제 네트워크 애플리케이션 실행 검증 |
+| 73 | `73-chroot` | `chroot` syscall + VFS 루트 교체 |
+| 74 | `74-mount-ns` | 프로세스별 마운트 테이블(mount namespace) — `32-vfs-open`의 전역 마운트 테이블을 `clone` 플래그로 분리 가능하게 확장 |
+| 75 | `75-pid-ns` | PID 네임스페이스 — 네임스페이스 내부에서 pid 1로 보이는 격리된 프로세스 트리 |
+| 76 | `76-uts-ns` | UTS 네임스페이스 — `sethostname`/`uname` 격리 |
+| 77 | `77-net-ns` | 네트워크 네임스페이스 — `66~72` 네트워크 스택을 네임스페이스별로 격리(가상 인터페이스/loopback) |
+| 78 | `78-cgroup-lite` | cgroup 유사 리소스 제한 그룹 — 메모리/CPU 사용량 제한 |
+| 79 | `79-container-runtime` | 네임스페이스(74~77)+cgroup(78)을 `unshare` 스타일 `clone` 플래그 조합으로 묶는 "컨테이너 실행기" 완성 — 최종 목표(컨테이너) 달성 지점 |
 
-12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → Linux ABI 호환 → **37~40에서 64비트 전환** → 외부 바이너리 실행 순서로 기반을 쌓는다.
+12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → Linux ABI 호환 → **37~40에서 64비트 전환** → 외부 바이너리 실행 → **61~62에서 60의 미해결 항목 마무리** → **63~66에서 PCI/AHCI/APIC로 하드웨어 확장** → **67~72에서 네트워크 스택** → **73~79에서 네임스페이스/cgroup 기반 컨테이너**(이 프로젝트의 최종 목표) 순서로 기반을 쌓는다. VT-x 기반 하드웨어 가상화(하이퍼바이저)는 이 로드맵의 범위 밖이다.
 
 순서·이름은 진행 중 자유롭게 조정 가능.
 
