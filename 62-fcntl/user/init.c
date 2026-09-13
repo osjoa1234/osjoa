@@ -1185,6 +1185,62 @@ void init_main(unsigned long *stack)
         run_argv(sh_argv);
     }
 
+    {
+        static char argv0[] = "sh";
+        static char argv1[] = "-c";
+        static char argv2[] = "echo ff > /disk/redir3.txt";
+        char *sh_argv[4];
+
+        sh_argv[0] = argv0;
+        sh_argv[1] = argv1;
+        sh_argv[2] = argv2;
+        sh_argv[3] = 0;
+
+        writes("shell: sh -c 'echo ff > /disk/redir3.txt' (busybox ash > check):\n");
+        run_argv(sh_argv);
+    }
+
+    {
+        static char argv0[] = "cat";
+        static char argv1[] = "/disk/redir3.txt";
+        char *cat_argv[3];
+
+        cat_argv[0] = argv0;
+        cat_argv[1] = argv1;
+        cat_argv[2] = 0;
+
+        writes("shell: cat /disk/redir3.txt:\n");
+        run_argv(cat_argv);
+    }
+
+    {
+        static char argv0[] = "sh";
+        static char argv1[] = "-c";
+        static char argv2[] = "echo gg >> /disk/redir3.txt";
+        char *sh_argv[4];
+
+        sh_argv[0] = argv0;
+        sh_argv[1] = argv1;
+        sh_argv[2] = argv2;
+        sh_argv[3] = 0;
+
+        writes("shell: sh -c 'echo gg >> /disk/redir3.txt' (busybox ash >> check):\n");
+        run_argv(sh_argv);
+    }
+
+    {
+        static char argv0[] = "cat";
+        static char argv1[] = "/disk/redir3.txt";
+        char *cat_argv[3];
+
+        cat_argv[0] = argv0;
+        cat_argv[1] = argv1;
+        cat_argv[2] = 0;
+
+        writes("shell: cat /disk/redir3.txt:\n");
+        run_argv(cat_argv);
+    }
+
     for (;;) {
         writes("$ ");
         n = sys_read(0U, buf, 63U);

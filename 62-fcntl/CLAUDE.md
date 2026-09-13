@@ -126,7 +126,7 @@ fcntl을 붙이고 첫 실행에서 여전히 `sh -c 'cat < ...'`가 `code=1`로
 
 ## 검증
 
-`user/init.c`의 `init_main`에 다음을 추가했다(커스텀 셸 `<` 셋 + busybox ash `<` 하나):
+`user/init.c`의 `init_main`에 다음을 추가했다(커스텀 셸 `<` 셋 + busybox ash `<`/`>`/`>>` 각각):
 
 ```c
 run_line("cat < /disk/hello.txt");
@@ -135,7 +135,16 @@ run_line("cat < /disk/does_not_exist.txt");
 ...
 sh_argv = { "sh", "-c", "cat < /disk/hello.txt" };
 run_argv(sh_argv);   // busybox ash가 직접 `<`를 파싱하는 경로
+...
+sh_argv = { "sh", "-c", "echo ff > /disk/redir3.txt" };
+run_argv(sh_argv);   // busybox ash가 직접 `>`를 파싱하는 경로
+run_argv({ "cat", "/disk/redir3.txt" });
+sh_argv = { "sh", "-c", "echo gg >> /disk/redir3.txt" };
+run_argv(sh_argv);   // busybox ash가 직접 `>>`를 파싱하는 경로
+run_argv({ "cat", "/disk/redir3.txt" });
 ```
+
+`>`/`>>` 두 개는 처음엔 없었다 — `<`만 ash 경로로 검증하고 넘어갔는데, "`echo`로 `>`/`>>`/`<`를 전부 busybox `sh` 안에서" 검증됐는지 질문을 받고서야 `>`/`>>`는 지금까지 커스텀 셸(`run_argv_redirect`/`run_line`)로만 검증했고 ash 자신의 리다이렉션 파서를 통과한 적이 없다는 게 드러나 추가했다.
 
 `make clean && make run-nogui` 결과(관련 구간만):
 
@@ -153,9 +162,20 @@ process 1 exited: code=1
 shell: sh -c 'cat < /disk/hello.txt' (busybox ash < check):
 hello ext2 root fs
 process 1 exited: code=0
+shell: sh -c 'echo ff > /disk/redir3.txt' (busybox ash > check):
+process 1 exited: code=0
+shell: cat /disk/redir3.txt:
+ff
+process 1 exited: code=0
+shell: sh -c 'echo gg >> /disk/redir3.txt' (busybox ash >> check):
+process 1 exited: code=0
+shell: cat /disk/redir3.txt:
+ff
+gg
+process 1 exited: code=0
 ```
 
-네 경우 모두 기대대로다: 커스텀 셸의 단독 `<`, 파이프와 결합, 존재하지 않는 파일 에러 처리, 그리고 **busybox ash가 자기 방식대로(`fcntl` 기반 fd 셔플) 처리한 `<`**까지 전부 통과.
+여섯 경우 모두 기대대로다: 커스텀 셸의 단독 `<`, 파이프와 결합, 존재하지 않는 파일 에러 처리, 그리고 **busybox ash가 자기 방식대로(`fcntl` 기반 fd 셔플) 처리한 `<`/`>`/`>>`** 전부 통과. `>`는 새 파일 생성, `>>`는 기존 내용(`ff`) 뒤에 `gg`를 이어붙인 것까지 확인됐다.
 
 **회귀**: 51~61의 모든 ext2 읽기/쓰기/`getdents`/심링크/PATH exec/`>` 리다이렉션/파이프/동시성 검증이 이전과 동일하게 통과했고, `e2fsck -f -n build/disk.img`도 에러 없이 통과했다.
 
@@ -177,6 +197,17 @@ process 1 exited: code=1
 shell: sh -c 'cat < /disk/hello.txt' (busybox ash < check):
 hello ext2 root fs
 process 1 exited: code=0
+shell: sh -c 'echo ff > /disk/redir3.txt' (busybox ash > check):
+process 1 exited: code=0
+shell: cat /disk/redir3.txt:
+ff
+process 1 exited: code=0
+shell: sh -c 'echo gg >> /disk/redir3.txt' (busybox ash >> check):
+process 1 exited: code=0
+shell: cat /disk/redir3.txt:
+ff
+gg
+process 1 exited: code=0
 ```
 
 `e2fsck -f -n build/disk.img`가 에러 없이 통과해야 한다.
@@ -189,7 +220,7 @@ process 1 exited: code=0
 | `boot/syscall.c` | 수정 | `sys_fcntl`(`F_DUPFD`/`F_DUPFD_CLOEXEC`/`F_GETFD`/`F_SETFD`) 신규 + 디스패치 케이스 추가; `sys_close`/`sys_dup2`에서 재사용되는 fd 슬롯의 `fd_cloexec` 비트 정리 추가 |
 | `boot/process.h` | 수정 | `process_t`에 `u32 fd_cloexec` 비트마스크 추가; `PROC_FD_MAX`를 8→16으로 |
 | `boot/process.c` | 수정 | `proc_alloc`에서 `fd_cloexec` 초기화; `proc_fork`에서 `fd_cloexec` 복사; `proc_exec`의 exec-time fd 정리를 "fd≥3 무조건 닫기"에서 "`FD_CLOEXEC` 플래그가 켜진 fd만 닫기"로 교체 |
-| `user/init.c` | 수정 | `split_pipeline`에 `redirect_in[SHELL_STAGE_MAX]` 파라미터와 `<` 토큰 파싱 추가; `run_line`에 `redirect_in` 배열 선언 + fork 자식에서 파이프 dup2 다음·`redirect_out` dup2 이전에 `sys_open`+`dup2(fd,0)` 삽입; 부팅 시퀀스에 커스텀 셸 `<` 검증 3종 + busybox ash `sh -c 'cat < ...'` 검증 1종 추가 |
+| `user/init.c` | 수정 | `split_pipeline`에 `redirect_in[SHELL_STAGE_MAX]` 파라미터와 `<` 토큰 파싱 추가; `run_line`에 `redirect_in` 배열 선언 + fork 자식에서 파이프 dup2 다음·`redirect_out` dup2 이전에 `sys_open`+`dup2(fd,0)` 삽입; 부팅 시퀀스에 커스텀 셸 `<` 검증 3종 + busybox ash `sh -c 'cat < ...'`/`sh -c 'echo ff > ...'`/`sh -c 'echo gg >> ...'` 검증 3종 추가 |
 | 나머지 전부 | 변경 없음 | 61의 파일 그대로 |
 
 ## 다음 단계 힌트
