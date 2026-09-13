@@ -108,7 +108,7 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 59 | `59-exec-vfs-symlink` | `proc_exec`를 initrd 직접 조회에서 VFS 경유로 리팩터링해 심링크를 따라가는 실행 경로 완성 + 58의 `envp`로 진짜 `PATH` 환경변수 기반 명령 탐색 구현 — `busybox`를 `cat`/`ls`/`sh`/`touch`/`mkdir`/`rm` 등으로 심링크해 멀티콜 바이너리로 동작 검증, `busybox sh`(ash) 내부에서도 짧은 이름으로 동작하는지까지 확인(`54-getdents`에서 발견한 "ash가 `$PATH`에서 `cat` 실행 파일을 못 찾는" 한계의 진짜 해결책) |
 | 60 | `60-redirect` | 셸에 `>` 파일 리다이렉션 추가 — ext2 `O_TRUNC` 구현 + `split_pipeline`의 `>` 토큰 파싱 + fork 자식에서의 `dup2` 배선 (`48-pipe`가 "쓰기 가능한 FS가 없어서" 미뤄뒀던 것을 55/59 이후 마무리) |
 | 61 | `61-io-lock` | ext2/ATA 동시 접근에 락 없음 버그 수정 — 디스크 I/O 경로(ATA PIO 컨트롤러 접근, ext2 스캐치 버퍼)에 스핀락 또는 요청 직렬화 큐 도입 (`60-redirect`에서 발견) |
-| 62 | `62-redirect-in` | 셸에 `<` 입력 리다이렉션 추가 — `redirect_out`/`redirect_append`와 나란히 `redirect_in` 파싱, fork 자식에서 `O_RDONLY` open 후 fd 0으로 `dup2` |
+| 62 | `62-fcntl` | 셸에 `<` 입력 리다이렉션 추가(`redirect_out`/`redirect_append`와 나란히 `redirect_in` 파싱, fork 자식에서 `O_RDONLY` open 후 fd 0으로 `dup2`) — 검증 중 busybox ash의 `<`가 `fcntl` 미구현으로 깨지는 걸 발견해 `F_DUPFD`/`F_DUPFD_CLOEXEC`/`F_GETFD`/`F_SETFD` 구현과 `proc_exec`의 exec-time fd 정리를 진짜 `FD_CLOEXEC` 기반으로 바꾸는 쪽으로 단계 범위를 다시 잡음 |
 | 63 | `63-pci-enum` | PCI 버스 스캔(config space I/O 포트 0xCF8/0xCFC) — vendor/device ID로 연결된 디바이스 나열 |
 | 64 | `64-ahci` | PCI 기반 AHCI(SATA) 드라이버로 `51-ata-pio`의 ATA PIO 대체 — 실제 서버/VM 표준 디스크 경로로 전환 |
 | 65 | `65-apic` | IOAPIC(MMIO)으로 `10-interrupts`의 PIC 리맵 대체 + Local APIC은 CPUID 게이팅 후 x2APIC(MSR) 기본 — MSI/SMP 전제조건 마련 |

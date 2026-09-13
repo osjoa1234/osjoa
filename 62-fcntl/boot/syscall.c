@@ -102,6 +102,7 @@ static void sys_close(u32 fd)
     if (fd < PROC_FD_MAX && p->fds[fd]) {
         vfs_close(p->fds[fd]);
         p->fds[fd] = 0;
+        p->fd_cloexec &= ~(1U << fd);
     }
 }
 
@@ -160,7 +161,46 @@ static u32 sys_dup2(u32 oldfd, u32 newfd)
 
     if (p->fds[newfd]) { vfs_close(p->fds[newfd]); p->fds[newfd] = 0; }
     p->fds[newfd] = vfs_dup(p->fds[oldfd]);
+    p->fd_cloexec &= ~(1U << newfd);
     return newfd;
+}
+
+#define F_DUPFD         0U
+#define F_GETFD         1U
+#define F_SETFD         2U
+#define F_DUPFD_CLOEXEC 1030U
+#define FD_CLOEXEC      1U
+
+static u32 sys_fcntl(u32 fd, u32 cmd, u64 arg)
+{
+    process_t *p = (process_t *)thread_current()->user_data;
+    u32        minfd;
+    u32        newfd;
+
+    if (fd >= PROC_FD_MAX || !p->fds[fd]) return (u32)-1U;
+
+    switch (cmd) {
+    case F_DUPFD:
+    case F_DUPFD_CLOEXEC:
+        minfd = (u32)arg;
+        for (newfd = minfd; newfd < PROC_FD_MAX; newfd++) {
+            if (!p->fds[newfd]) {
+                p->fds[newfd] = vfs_dup(p->fds[fd]);
+                if (cmd == F_DUPFD_CLOEXEC) p->fd_cloexec |= (1U << newfd);
+                else p->fd_cloexec &= ~(1U << newfd);
+                return newfd;
+            }
+        }
+        return (u32)-1U;
+    case F_GETFD:
+        return (p->fd_cloexec & (1U << fd)) ? FD_CLOEXEC : 0U;
+    case F_SETFD:
+        if (arg & FD_CLOEXEC) p->fd_cloexec |= (1U << fd);
+        else p->fd_cloexec &= ~(1U << fd);
+        return 0U;
+    default:
+        return (u32)-1U;
+    }
 }
 
 static u32 sys_mprotect(u64 addr, u64 length, u32 prot)
@@ -426,6 +466,9 @@ void syscall_dispatch(struct interrupt_frame *frame)
         break;
     case SYS_DUP2:
         frame->rax = sys_dup2((u32)frame->rdi, (u32)frame->rsi);
+        break;
+    case SYS_FCNTL:
+        frame->rax = sys_fcntl((u32)frame->rdi, (u32)frame->rsi, frame->rdx);
         break;
     case SYS_GETPID:
         frame->rax = sys_getpid();

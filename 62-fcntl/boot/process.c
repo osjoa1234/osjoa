@@ -62,6 +62,7 @@ static process_t *proc_alloc(void)
             proc_table[i].threads     = 0;
             wq_init(&proc_table[i].wait_chldexit);
             for (j = 0U; j < PROC_FD_MAX; j++) proc_table[i].fds[j] = 0;
+            proc_table[i].fd_cloexec = 0U;
             signal_reset_handlers(&proc_table[i]);
             proc_table[i].sig_pending = 0ULL;
             proc_table[i].sig_blocked = 0ULL;
@@ -180,6 +181,7 @@ u32 proc_fork(const fork_resume_t *ctx)
     for (j = 0U; j < PROC_FD_MAX; j++) {
         if (parent->fds[j]) child->fds[j] = vfs_dup(parent->fds[j]);
     }
+    child->fd_cloexec = parent->fd_cloexec;
 
     child_pml4_phys = paging_clone_dir();
     paging_copy_user_pages(parent->pml4_phys, child_pml4_phys);
@@ -223,8 +225,12 @@ void proc_exec(const char *name, char *const argv[], char *const envp[])
     char      *envp_copy[PROC_EXEC_ENVMAX + 1U];
     u32        envc;
 
-    for (j = 3U; j < PROC_FD_MAX; j++) {
-        if (p->fds[j]) { vfs_close(p->fds[j]); p->fds[j] = 0; }
+    for (j = 0U; j < PROC_FD_MAX; j++) {
+        if (p->fds[j] && (p->fd_cloexec & (1U << j))) {
+            vfs_close(p->fds[j]);
+            p->fds[j] = 0;
+            p->fd_cloexec &= ~(1U << j);
+        }
     }
 
     bin_buf = exec_load_binary(name, &bin_size);

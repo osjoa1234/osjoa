@@ -14,6 +14,7 @@ enum {
     SYS_LSTAT        = 6,
     SYS_LSEEK        = 8,
     SYS_ACCESS       = 21,
+    SYS_FCNTL        = 72,
     SYS_RT_SIGACTION   = 13,
     SYS_RT_SIGPROCMASK = 14,
     SYS_RT_SIGRETURN   = 15,

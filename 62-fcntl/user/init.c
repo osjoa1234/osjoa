@@ -1170,6 +1170,21 @@ void init_main(unsigned long *stack)
         run_line(line);
     }
 
+    {
+        static char argv0[] = "sh";
+        static char argv1[] = "-c";
+        static char argv2[] = "cat < /disk/hello.txt";
+        char *sh_argv[4];
+
+        sh_argv[0] = argv0;
+        sh_argv[1] = argv1;
+        sh_argv[2] = argv2;
+        sh_argv[3] = 0;
+
+        writes("shell: sh -c 'cat < /disk/hello.txt' (busybox ash < check):\n");
+        run_argv(sh_argv);
+    }
+
     for (;;) {
         writes("$ ");
         n = sys_read(0U, buf, 63U);

@@ -10,7 +10,7 @@
 #define PROC_RUNNING   1U
 #define PROC_ZOMBIE    2U
 #define PROC_MAX       8U
-#define PROC_FD_MAX    8U
+#define PROC_FD_MAX    16U
 
 #define PROC_USTACK_PAGES 8U
 #define PROC_USTACK_TOP   0x01000000ULL
@@ -61,6 +61,7 @@ typedef struct {
     thread_t    *threads;
     wait_queue_t wait_chldexit;
     vfs_file_t  *fds[PROC_FD_MAX];
+    u32          fd_cloexec;
     u64          sig_handler[NSIG];
     u64          sig_pending;
     u64          sig_blocked;
