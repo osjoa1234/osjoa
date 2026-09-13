@@ -111,7 +111,7 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 62 | `62-redirect-in` | 셸에 `<` 입력 리다이렉션 추가 — `redirect_out`/`redirect_append`와 나란히 `redirect_in` 파싱, fork 자식에서 `O_RDONLY` open 후 fd 0으로 `dup2` |
 | 63 | `63-pci-enum` | PCI 버스 스캔(config space I/O 포트 0xCF8/0xCFC) — vendor/device ID로 연결된 디바이스 나열 |
 | 64 | `64-ahci` | PCI 기반 AHCI(SATA) 드라이버로 `51-ata-pio`의 ATA PIO 대체 — 실제 서버/VM 표준 디스크 경로로 전환 |
-| 65 | `65-apic` | Local APIC + IOAPIC로 `10-interrupts`의 PIC 리맵 대체 — MSI/SMP 전제조건 마련 |
+| 65 | `65-apic` | IOAPIC(MMIO)으로 `10-interrupts`의 PIC 리맵 대체 + Local APIC은 CPUID 게이팅 후 x2APIC(MSR) 기본 — MSI/SMP 전제조건 마련 |
 | 66 | `66-nic-rtl8139` | PCI 기반 rtl8139 NIC 드라이버 — 레지스터 초기화, 패킷 송수신(raw 이더넷 프레임 loopback으로 드라이버만 검증) |
 | 67 | `67-ethernet-arp` | 이더넷 프레임 파싱 + ARP 요청/응답 |
 | 68 | `68-ip-icmp` | IPv4 헤더 처리 + ICMP — `ping` 응답으로 검증 |
