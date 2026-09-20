@@ -112,22 +112,23 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 63 | `63-pci-enum` | PCI 버스 스캔(config space I/O 포트 0xCF8/0xCFC) — vendor/device ID로 연결된 디바이스 나열 |
 | 64 | `64-ahci` | PCI 기반 AHCI(SATA) 드라이버로 `51-ata-pio`의 ATA PIO 대체 — 실제 서버/VM 표준 디스크 경로로 전환 |
 | 65 | `65-apic` | IOAPIC(MMIO)으로 `10-interrupts`의 PIC 리맵 대체 + Local APIC은 CPUID 게이팅 후 x2APIC(MSR) 기본 — MSI/SMP 전제조건 마련 |
-| 66 | `66-nic-rtl8139` | PCI 기반 rtl8139 NIC 드라이버 — 레지스터 초기화, 패킷 송수신(raw 이더넷 프레임 loopback으로 드라이버만 검증) |
-| 67 | `67-ethernet-arp` | 이더넷 프레임 파싱 + ARP 요청/응답 |
-| 68 | `68-ip-icmp` | IPv4 헤더 처리 + ICMP — `ping` 응답으로 검증 |
-| 69 | `69-udp` | UDP 송수신 |
-| 70 | `70-tcp` | TCP 상태 머신(3-way handshake, 데이터 전송, 종료) |
-| 71 | `71-socket-syscall` | BSD 소켓 syscall(`socket`/`bind`/`listen`/`accept`/`connect`/`send`/`recv`) 유저 공간 노출 |
-| 72 | `72-net-apps` | busybox `nc`/`wget` 등으로 실제 네트워크 애플리케이션 실행 검증 |
-| 73 | `73-chroot` | `chroot` syscall + VFS 루트 교체 |
-| 74 | `74-mount-ns` | 프로세스별 마운트 테이블(mount namespace) — `32-vfs-open`의 전역 마운트 테이블을 `clone` 플래그로 분리 가능하게 확장 |
-| 75 | `75-pid-ns` | PID 네임스페이스 — 네임스페이스 내부에서 pid 1로 보이는 격리된 프로세스 트리 |
-| 76 | `76-uts-ns` | UTS 네임스페이스 — `sethostname`/`uname` 격리 |
-| 77 | `77-net-ns` | 네트워크 네임스페이스 — `66~72` 네트워크 스택을 네임스페이스별로 격리(가상 인터페이스/loopback) |
-| 78 | `78-cgroup-lite` | cgroup 유사 리소스 제한 그룹 — 메모리/CPU 사용량 제한 |
-| 79 | `79-container-runtime` | 네임스페이스(74~77)+cgroup(78)을 `unshare` 스타일 `clone` 플래그 조합으로 묶는 "컨테이너 실행기" 완성 — 최종 목표(컨테이너) 달성 지점 |
+| 66 | `66-msi` | PCI capability list에서 MSI/MSI-X 캐퍼빌리티 구조체 파싱 + 프로그래밍 — `64-ahci`의 AHCI 컨트롤러(MSI 지원)를 그대로 재사용해 IOAPIC 핀 라우팅 대신 MSI로 인터럽트가 들어오는지만 검증, 새 디바이스 드라이버는 추가하지 않음 |
+| 67 | `67-nic-rtl8139` | PCI 기반 rtl8139 NIC 드라이버 — 레지스터 초기화, 패킷 송수신(raw 이더넷 프레임 loopback으로 드라이버만 검증); rtl8139는 MSI 미지원 장치라 legacy INTx로 남는 사례 |
+| 68 | `68-ethernet-arp` | 이더넷 프레임 파싱 + ARP 요청/응답 |
+| 69 | `69-ip-icmp` | IPv4 헤더 처리 + ICMP — `ping` 응답으로 검증 |
+| 70 | `70-udp` | UDP 송수신 |
+| 71 | `71-tcp` | TCP 상태 머신(3-way handshake, 데이터 전송, 종료) |
+| 72 | `72-socket-syscall` | BSD 소켓 syscall(`socket`/`bind`/`listen`/`accept`/`connect`/`send`/`recv`) 유저 공간 노출 |
+| 73 | `73-net-apps` | busybox `nc`/`wget` 등으로 실제 네트워크 애플리케이션 실행 검증 |
+| 74 | `74-chroot` | `chroot` syscall + VFS 루트 교체 |
+| 75 | `75-mount-ns` | 프로세스별 마운트 테이블(mount namespace) — `32-vfs-open`의 전역 마운트 테이블을 `clone` 플래그로 분리 가능하게 확장 |
+| 76 | `76-pid-ns` | PID 네임스페이스 — 네임스페이스 내부에서 pid 1로 보이는 격리된 프로세스 트리 |
+| 77 | `77-uts-ns` | UTS 네임스페이스 — `sethostname`/`uname` 격리 |
+| 78 | `78-net-ns` | 네트워크 네임스페이스 — `67~73` 네트워크 스택을 네임스페이스별로 격리(가상 인터페이스/loopback) |
+| 79 | `79-cgroup-lite` | cgroup 유사 리소스 제한 그룹 — 메모리/CPU 사용량 제한 |
+| 80 | `80-container-runtime` | 네임스페이스(75~78)+cgroup(79)을 `unshare` 스타일 `clone` 플래그 조합으로 묶는 "컨테이너 실행기" 완성 — 최종 목표(컨테이너) 달성 지점 |
 
-12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → Linux ABI 호환 → **37~40에서 64비트 전환** → 외부 바이너리 실행 → **61~62에서 60의 미해결 항목 마무리** → **63~66에서 PCI/AHCI/APIC로 하드웨어 확장** → **67~72에서 네트워크 스택** → **73~79에서 네임스페이스/cgroup 기반 컨테이너**(이 프로젝트의 최종 목표) 순서로 기반을 쌓는다. VT-x 기반 하드웨어 가상화(하이퍼바이저)는 이 로드맵의 범위 밖이다.
+12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → Linux ABI 호환 → **37~40에서 64비트 전환** → 외부 바이너리 실행 → **61~62에서 60의 미해결 항목 마무리** → **63~67에서 PCI/AHCI/APIC/MSI로 하드웨어 확장** → **68~73에서 네트워크 스택** → **74~80에서 네임스페이스/cgroup 기반 컨테이너**(이 프로젝트의 최종 목표) 순서로 기반을 쌓는다. VT-x 기반 하드웨어 가상화(하이퍼바이저)는 이 로드맵의 범위 밖이다.
 
 순서·이름은 진행 중 자유롭게 조정 가능.
 
