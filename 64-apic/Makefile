@@ -78,7 +78,6 @@ CFLAGS       := -m64 -mcmodel=kernel -std=c11 -O2 -Wall -Wextra -ffreestanding \
                 -fno-builtin -fno-pic -fno-pie -fno-stack-protector -mno-red-zone \
                 -mno-sse -mno-sse2 -mno-mmx
 LDFLAGS      := -m elf_x86_64 -T linker.ld -nostdlib
-QEMUCPU      := -cpu qemu64,+x2apic
 RUNNOGUI     := -display none -serial none -monitor none -debugcon stdio \
                 -device isa-debug-exit,iobase=0xf4,iosize=0x04
 
@@ -287,10 +286,10 @@ $(DISKIMG): $(ROOTFSFILES) $(TESTGEN) $(BUSYBOXSRC) | $(BUILD)
 	    -d $(ROOTFSDIR) $@
 
 run: $(ISO) $(DISKIMG)
-	$(QEMU) $(QEMUCPU) -cdrom $(ISO) -drive file=$(DISKIMG),format=raw,if=ide,index=0
+	$(QEMU) -cdrom $(ISO) -drive file=$(DISKIMG),format=raw,if=ide,index=0
 
 run-nogui: $(ISO) $(DISKIMG)
-	timeout 20 $(QEMU) $(QEMUCPU) -cdrom $(ISO) -drive file=$(DISKIMG),format=raw,if=ide,index=0 $(RUNNOGUI) || true
+	timeout 20 $(QEMU) -cdrom $(ISO) -drive file=$(DISKIMG),format=raw,if=ide,index=0 $(RUNNOGUI) || true
 
 clean:
 	rm -rf $(BUILD)

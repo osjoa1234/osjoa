@@ -1,8 +1,8 @@
 # 64 — apic
 
-**목표**: `10-interrupts`가 초기화한 8259 PIC 기반 인터럽트 컨트롤러를 IOAPIC(MMIO)로 대체하고, Local APIC은 CPUID로 x2APIC 지원 여부를 게이팅한 뒤 **x2APIC(MSR 기반)을 기본**으로 삼는다(미지원 시 xAPIC MMIO로 폴백). `63-multiboot2`에서 확보만 해두고 미뤘던 ACPI RSDP를 이번 단계에서 실제로 RSDT/XSDT → MADT까지 파싱해 IOAPIC/Local APIC 베이스 주소와 레거시 IRQ 라우팅 정보를 뽑아낸다. IOAPIC(디바이스 IRQ 라우팅)과 Local APIC(코어별 인터럽트 수신·EOI)은 서로 다른 하드웨어 부품이라, xAPIC/x2APIC 구분은 Local APIC에만 해당하고 IOAPIC은 그 구분과 무관하게 항상 MMIO(`0xFEC00000` 근방)로 접근한다.
+**목표**: `10-interrupts`가 초기화한 8259 PIC 기반 인터럽트 컨트롤러를 IOAPIC(MMIO)로 대체하고, Local APIC도 xAPIC(MMIO)로 접근한다. `63-multiboot2`에서 확보만 해두고 미뤘던 ACPI RSDP를 이번 단계에서 실제로 RSDT/XSDT → MADT까지 파싱해 IOAPIC/Local APIC 베이스 주소와 레거시 IRQ 라우팅 정보를 뽑아낸다. IOAPIC(디바이스 IRQ 라우팅)과 Local APIC(코어별 인터럽트 수신·EOI)은 서로 다른 하드웨어 부품이지만, 둘 다 물리주소 대역만 다를 뿐 같은 방식(MMIO, IOAPIC은 `0xFEC00000` 근방/Local APIC은 `0xFEE00000` 근방)으로 접근한다.
 
-CPUID 명령어는 이 프로젝트에 지금까지 한 번도 등장한 적 없다(`37-long-mode`도 CPUID로 롱모드 지원을 확인하지 않고 바로 `EFER.LME`를 켰다) — `64-apic`가 CPUID를 처음 도입하는 지점이다. MSR(`rdmsr`/`wrmsr`)은 이미 `37`(EFER.LME), `43`(FS_BASE), `44`(SYSCALL MSR)에서 반복 사용된 개념이라 x2APIC의 MSR 인터페이스 자체는 새로울 게 없다.
+x2APIC(MSR 기반 Local APIC 접근)은 시도하지 않는다 — 이유는 2번 참고. CPUID/MSR(`rdmsr`/`wrmsr`)도 그래서 이번 단계엔 등장하지 않는다.
 
 ## 1) `boot/acpi.c`/`.h`: RSDP → RSDT/XSDT → MADT
 
@@ -31,29 +31,23 @@ Type 2(Interrupt Source Override)가 실무적으로 중요하다 — 실제 ACP
 
 RSDP/SDT 체크섬 검증은 하지 않는다 — GRUB이 넘겨준 테이블이 항상 유효하다고 가정하는, 이 프로젝트가 QEMU 전용이라는 전제 위의 의도적 생략이다.
 
-## 2) `boot/apic.c`/`.h`: Local APIC — x2APIC(MSR) 기본, xAPIC(MMIO) 폴백
+## 2) `boot/apic.c`/`.h`: Local APIC — xAPIC(MMIO) 전용
 
 ```c
-cpuid(1U, &a, &b, &c, &d);
-use_x2apic = (c & (1U << 21)) ? 1 : 0;
+lapic_mmio = map_mmio(LAPIC_MMIO_VADDR, acpi_lapic_address());
 
-if (use_x2apic) {
-    u64 base = rdmsr(IA32_APIC_BASE_MSR);
-    wrmsr(IA32_APIC_BASE_MSR, base | (1ULL << 10) | (1ULL << 11));
-} else {
-    lapic_mmio = map_mmio(LAPIC_MMIO_VADDR, acpi_lapic_address());
-}
+lapic_write(XAPIC_REG_SVR, APIC_SVR_SOFT_ENABLE | APIC_SPURIOUS_VECTOR);
 ```
 
-`CPUID.01H:ECX[21]`이 x2APIC 지원 여부다. 지원하면 `IA32_APIC_BASE`(MSR 0x1B)의 `EXTD`(비트10)를 켜서 x2APIC 모드로 전환하고, 이후 모든 Local APIC 레지스터 접근은 MSR(`0x800 + xAPIC오프셋/16`, SDM이 정의한 그대로의 변환식)로 간다. 미지원이면 `acpi_lapic_address()`(기본 `0xFEE00000`, MADT type5 override가 있으면 그 값)를 MMIO로 매핑해 옛날 방식(`0xF0`=SVR, `0xB0`=EOI, `0x20`=ID 오프셋)으로 접근한다. `lapic_read`/`lapic_write`가 이 두 경로를 감싸 상위 코드(`apic_id`, `apic_eoi`)는 어느 모드인지 몰라도 되게 했다 — 단, x2APIC의 ID 레지스터는 32비트 값을 그대로 담고 xAPIC MMIO ID 레지스터는 상위 8비트에만 담는 차이가 있어 `apic_id()`에서 그 부분만 분기한다.
+`acpi_lapic_address()`(기본 `0xFEE00000`, MADT type5 override가 있으면 그 값)를 MMIO로 매핑해 접근한다. SVR(Spurious Interrupt Vector Register, 오프셋 `0xF0`)에 소프트웨어 enable 비트(비트8)와 spurious 벡터 번호(`0xFF`)를 써서 LAPIC을 켠다. `apic_id()`는 ID 레지스터(오프셋 `0x20`)를 읽어 상위 8비트를 뽑고, `apic_eoi()`는 EOI 레지스터(오프셋 `0xB0`)에 아무 값이나 쓴다.
 
-**QEMU/TCG 환경의 한계**: `-cpu qemu64,+x2apic`로 CPU에 플래그를 켜도, 이 프로젝트가 쓰는 TCG(소프트웨어 에뮬레이션, WSL2 안에 KVM 없음)는 x2APIC CPUID 비트 자체를 지원하지 않는다:
+**x2APIC(MSR 기반) 경로는 구현하지 않는다**: 처음엔 CPUID(`CPUID.01H:ECX[21]`)로 x2APIC 지원 여부를 확인해 지원 시 `IA32_APIC_BASE`(MSR 0x1B)의 `EXTD` 비트를 켜서 MSR 인터페이스(`0x800 + xAPIC오프셋/16`)로 전환하는 코드를 같이 짰었다. 그런데 이 프로젝트가 쓰는 QEMU/TCG(WSL2 안에 `/dev/kvm` 없음, 항상 소프트웨어 에뮬레이션)는 x2APIC CPUID 비트 자체를 지원하지 않는다:
 
 ```
 qemu-system-x86_64: warning: TCG doesn't support requested feature: CPUID.01H:ECX.x2apic [bit 21]
 ```
 
-그 결과 `CPUID.01H:ECX[21]`이 항상 0으로 관측되고, 코드의 게이팅 로직이 정확히 의도한 대로 xAPIC MMIO 폴백을 탄다 — **이번 단계는 xAPIC MMIO 경로만 실제로 검증됐고, x2APIC MSR 경로는 KVM(`-enable-kvm`)이나 실제 하드웨어에서만 확인 가능하다.** `-cpu qemu64,+x2apic` 플래그 자체는 의도를 남겨두기 위해 유지한다(실제 CPU/KVM에서 실행하면 이 플래그가 의미를 가지며 x2APIC 경로가 켜진다).
+`-cpu qemu64,+x2apic`로 CPU 플래그를 켜고 `-cpu max`(가장 강력한 프로필)에 명시적으로 붙여도 결과는 같다 — `CPUID.01H:ECX[21]`이 이 환경에서 절대 1이 되지 않는다. 즉 게이팅 로직은 매번 xAPIC 폴백만 타서, x2APIC 분기는 한 번도 실행된 적 없는 죽은 코드였다. 검증할 방법이 없는 코드를 남겨두는 대신 xAPIC 단일 경로로 정리했다 — CPUID 게이팅용으로만 쓰였던 `cpuid()`/`rdmsr()`/`wrmsr()`도 같이 삭제해서, 이 프로젝트는 아직 CPUID를 쓰지 않는다. 실제 하드웨어나 KVM(`-enable-kvm`, 리눅스 호스트 + `/dev/kvm` 필요)에서 x2APIC을 쓰고 싶어지면 이 지점에 CPUID 게이팅 + MSR 접근 경로를 다시 추가하면 된다.
 
 ## 3) `boot/apic.c`: I/O APIC — 항상 MMIO, 리다이렉션 테이블 프로그래밍
 
@@ -130,16 +124,16 @@ processes: init spawned pid=0
 | 파일 | 상태 | 설명 |
 |------|------|------|
 | `boot/acpi.c`, `boot/acpi.h` | 신규 | RSDP(리비전 필드로 1.0/2.0+ 판별) → RSDT/XSDT 순회 → MADT(`"APIC"`) 파싱. Local APIC(type0, BSP id)/I-O APIC(type1)/Interrupt Source Override(type2)/Local APIC Address Override(type5) 엔트리 처리, ISA IRQ→GSI 재매핑+극성/트리거 플래그 테이블 |
-| `boot/apic.c`, `boot/apic.h` | 신규 | CPUID(이 프로젝트 최초 도입)로 x2APIC 지원 게이팅, x2APIC(MSR)/xAPIC(MMIO) 겸용 Local APIC 드라이버(`apic_init`/`apic_id`/`apic_eoi`), I/O APIC 드라이버(`ioapic_init`/`ioapic_unmask_irq`) |
+| `boot/apic.c`, `boot/apic.h` | 신규 | xAPIC(MMIO) 전용 Local APIC 드라이버(`apic_init`/`apic_id`/`apic_eoi`), I/O APIC 드라이버(`ioapic_init`/`ioapic_unmask_irq`) |
 | `boot/paging.c`, `boot/paging.h` | 수정 | `page_map_mmio(vaddr, paddr)` 추가 — `page_map_frame`과 동일한 4KB 페이지 워크에 `PTE_PCD`(캐시 비활성화) 추가 |
 | `boot/interrupts.c` | 수정 | `pic_unmask_irq`/`pic_write_masks`/`pic_send_eoi`/`pic1_mask`/`pic2_mask` 삭제(더는 아무도 안 씀); `pic_remap`은 이제 "리맵 후 완전 마스크"로 용도가 바뀜(레거시 PIC 영구 비활성화); `handle_irq`의 EOI가 `apic_eoi()`로, `interrupts_unmask_irq`의 내부가 `ioapic_unmask_irq`로 교체(공개 시그니처는 무변경이라 `timer.c`/`keyboard.c` 호출부는 그대로) |
 | `boot/kernel.c` | 수정 | `acpi_init()`(RSDP 파싱 후 호출, MADT/IOAPIC 못 찾으면 fatal) + `apic_init()` + `ioapic_init()` 호출과 로그 라인 추가, `interrupts_init()`와 `kheap_init()` 사이에 배치 |
-| `Makefile` | 수정 | `boot/acpi.c`/`boot/apic.c` 빌드 규칙과 `KERNELELF` 링크 목록에 추가; QEMU 실행 타겟에 `-cpu qemu64,+x2apic` 추가(TCG 제약으로 실제로는 xAPIC 폴백만 검증됨, 5번 참고) |
+| `Makefile` | 수정 | `boot/acpi.c`/`boot/apic.c` 빌드 규칙과 `KERNELELF` 링크 목록에 추가 |
 | 나머지 전부 | 변경 없음 | 63의 파일 그대로 |
 
 ## 다음 단계 힌트
 
-- **x2APIC MSR 경로는 이 저장소의 QEMU/TCG 환경에서 검증 불가능한 채로 남는다**: 코드 게이팅 로직 자체는 실제 리눅스와 같은 방식(CPUID 확인 → 지원 시 즉시 x2APIC 전환)으로 짜여 있지만, TCG가 `CPUID.01H:ECX[21]`을 절대 세팅해주지 않아 항상 xAPIC MMIO 폴백만 탄다. KVM(`-enable-kvm`, 리눅스 호스트 + `/dev/kvm` 필요, 이 프로젝트의 WSL2 환경엔 없음)이나 실제 하드웨어에서만 그 경로가 실행된다 — 이 프로젝트 로드맵 안에서 검증할 계획은 없다.
+- **x2APIC(MSR) 경로는 구현하지 않았다**: 이 저장소의 QEMU/TCG 환경에서는 `CPUID.01H:ECX[21]`이 절대 1이 되지 않아 검증할 방법이 없어서(2번 참고), CPUID 게이팅 코드 자체를 들어내고 xAPIC 단일 경로로 정리했다. KVM(`-enable-kvm`, 리눅스 호스트 + `/dev/kvm` 필요, 이 프로젝트의 WSL2 환경엔 없음)이나 실제 하드웨어로 옮기면 그때 CPUID 게이팅 + MSR 접근 경로를 다시 추가할 수 있다 — 이 프로젝트 로드맵 안에서는 계획에 없다.
 - **Local APIC 타이머는 안 건드렸다**: PIT(`15-pit-timer`)를 그대로 IRQ0 소스로 쓴다. Local APIC 자체 내장 타이머(TSC-deadline 등)로 옮기는 건 이번 단계 범위 밖이다.
 - **IPI(Inter-Processor Interrupt)는 구현하지 않았다**: `ICR`(Interrupt Command Register) 레지스터를 아예 안 건드렸다 — 지금 커널 스레드는 전부 소프트웨어 스케줄링(단일 코어)이라 필요 없다. SMP를 붙이는 로드맵이 생기면 그때 `apic.c`에 추가.
 - **`65-pcie-enum`으로 이동**: MADT까지 파싱해 IOAPIC/LAPIC 기반을 갖췄으니, 로드맵상 다음은 PCIe 버스 스캔(legacy config space I/O 포트)이다.

@@ -110,11 +110,11 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 61 | `61-io-lock` | ext2/ATA 동시 접근에 락 없음 버그 수정 — 디스크 I/O 경로(ATA PIO 컨트롤러 접근, ext2 스캐치 버퍼)에 스핀락 또는 요청 직렬화 큐 도입 (`60-redirect`에서 발견) |
 | 62 | `62-fcntl` | 셸에 `<` 입력 리다이렉션 추가(`redirect_out`/`redirect_append`와 나란히 `redirect_in` 파싱, fork 자식에서 `O_RDONLY` open 후 fd 0으로 `dup2`) — 검증 중 busybox ash의 `<`가 `fcntl` 미구현으로 깨지는 걸 발견해 `F_DUPFD`/`F_DUPFD_CLOEXEC`/`F_GETFD`/`F_SETFD` 구현과 `proc_exec`의 exec-time fd 정리를 진짜 `FD_CLOEXEC` 기반으로 바꾸는 쪽으로 단계 범위를 다시 잡음 |
 | 63 | `63-multiboot2` | GRUB Multiboot1 → Multiboot2 업그레이드 — ACPI RSDP 태그(구버전 14/신버전 15) 수신, `08-grub-multiboot`가 넘겨받던 boot info 구조를 Multiboot2 태그 순회로 교체 — Multiboot1엔 ACPI 태그가 없어 RSDP를 EBDA/0xE0000~0xFFFFF 수동 스캔으로 찾아야 했는데 이걸 없애는 게 목적 |
-| 64 | `64-apic` | IOAPIC(MMIO)으로 `10-interrupts`의 PIC 리맵 대체 + Local APIC은 CPUID 게이팅 후 x2APIC(MSR) 기본 — `63-multiboot2`로 받은 RSDP에서 MADT를 파싱해 IOAPIC/LAPIC 주소 확보, MSI-X 전제조건 마련 |
+| 64 | `64-apic` | IOAPIC(MMIO)으로 `10-interrupts`의 PIC 리맵 대체 + Local APIC도 xAPIC(MMIO)로 접근 — `63-multiboot2`로 받은 RSDP에서 MADT를 파싱해 IOAPIC/LAPIC 주소 확보, MSI-X 전제조건 마련. x2APIC(MSR)은 QEMU/TCG가 CPUID 비트를 지원하지 않아 시도하지 않음 |
 | 65 | `65-pcie-enum` | PCIe 버스 스캔 — legacy config space I/O 포트(0xCF8/0xCFC)로 vendor/device ID·BAR·capability list 나열; PCIe도 첫 256바이트는 PCI와 호환이라 legacy 메커니즘으로 충분하고, extended config space(ECAM/MCFG)는 이번 범위(MSI-X capability는 legacy 256바이트 안에 있음)에서 필요 없어 보류 |
 | 66 | `66-nvme-admin` | PCIe 기반 NVMe 컨트롤러 admin queue 초기화 + Identify Controller/Namespace 커맨드 — `51-ata-pio`의 후속으로 AHCI는 건너뜀; 완료는 CQ phase bit polling으로 확인, 인터럽트는 아직 안 씀 |
 | 67 | `67-nvme-io` | NVMe I/O submission/completion queue 생성 + read/write 커맨드(PRP 리스트) — `51-ata-pio`가 ext2에 제공하던 sector read/write를 대체해 `52`~`62` ext2/셸 스택이 NVMe 경유로도 동작하는지 재검증; 완료 통지는 여전히 polling |
-| 68 | `68-msi-x` | PCI capability list에서 MSI-X 캐퍼빌리티 구조체(메시지 테이블/PBA) 파싱 + 프로그래밍 — `67-nvme-io`의 NVMe 컨트롤러를 그대로 재사용해 polling 대신 MSI-X 인터럽트로 완료 통지가 들어오는지만 검증, 새 디바이스 드라이버는 추가하지 않음; destination은 `64-apic`의 x2APIC ID |
+| 68 | `68-msi-x` | PCI capability list에서 MSI-X 캐퍼빌리티 구조체(메시지 테이블/PBA) 파싱 + 프로그래밍 — `67-nvme-io`의 NVMe 컨트롤러를 그대로 재사용해 polling 대신 MSI-X 인터럽트로 완료 통지가 들어오는지만 검증, 새 디바이스 드라이버는 추가하지 않음; destination은 `64-apic`의 xAPIC ID |
 | 69 | `69-nic-rtl8139` | PCI 기반 rtl8139 NIC 드라이버 — 레지스터 초기화, 패킷 송수신(raw 이더넷 프레임 loopback으로 드라이버만 검증); rtl8139는 MSI 미지원 장치라 legacy INTx로 남는 사례 |
 | 70 | `70-ethernet-arp` | 이더넷 프레임 파싱 + ARP 요청/응답 |
 | 71 | `71-ip-icmp` | IPv4 헤더 처리 + ICMP — `ping` 응답으로 검증 |
