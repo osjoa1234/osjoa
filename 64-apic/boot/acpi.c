@@ -24,6 +24,12 @@ struct acpi_sdt_header {
     u32  creator_revision;
 } __attribute__((packed));
 
+struct acpi_madt {
+    struct acpi_sdt_header header;
+    u32 local_apic_address;
+    u32 flags;
+} __attribute__((packed));
+
 struct madt_entry_header {
     u8 type;
     u8 length;
@@ -95,13 +101,14 @@ static int acpi_sig_is(const struct acpi_sdt_header *table, const char *sig)
            table->sig[2] == sig[2] && table->sig[3] == sig[3];
 }
 
-static void madt_parse(const struct acpi_sdt_header *madt)
+static void madt_parse(const struct acpi_sdt_header *header)
 {
+    const struct acpi_madt *madt = (const struct acpi_madt *)header;
     const u8 *base = (const u8 *)madt;
-    const u8 *end  = base + madt->length;
-    const u8 *ptr  = base + sizeof(struct acpi_sdt_header) + 8U;
+    const u8 *end  = base + madt->header.length;
+    const u8 *ptr  = base + sizeof(struct acpi_madt);
 
-    g_lapic_address = *(const u32 *)(base + sizeof(struct acpi_sdt_header));
+    g_lapic_address = madt->local_apic_address;
 
     while (ptr < end) {
         const struct madt_entry_header *eh = (const struct madt_entry_header *)ptr;
