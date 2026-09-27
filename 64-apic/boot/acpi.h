@@ -8,6 +8,10 @@ void acpi_init(const void *rsdp_bytes);
 u32 acpi_bsp_apic_id(void);
 u32 acpi_lapic_address(void);
 
+u32 acpi_cpu_count(void);
+u32 acpi_cpu_apic_id(u32 index);
+u8  acpi_cpu_enabled(u32 index);
+
 u32 acpi_ioapic_id(void);
 u32 acpi_ioapic_address(void);
 u32 acpi_ioapic_gsi_base(void);

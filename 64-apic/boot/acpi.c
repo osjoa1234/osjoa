@@ -65,8 +65,14 @@ enum {
     MADT_TYPE_LAPIC_ADDR_OVERRIDE = 5U
 };
 
+#define ACPI_MAX_CPUS 16U
+
 static u32 g_bsp_apic_id;
 static int g_bsp_found;
+
+static u32 g_cpu_apic_id[ACPI_MAX_CPUS];
+static u8  g_cpu_enabled[ACPI_MAX_CPUS];
+static u32 g_cpu_count;
 
 static u32 g_lapic_address = 0xFEE00000U;
 
@@ -102,6 +108,12 @@ static void madt_parse(const struct acpi_sdt_header *madt)
 
         if (eh->type == MADT_TYPE_LOCAL_APIC) {
             const struct madt_local_apic *la = (const struct madt_local_apic *)ptr;
+
+            if (g_cpu_count < ACPI_MAX_CPUS) {
+                g_cpu_apic_id[g_cpu_count] = la->apic_id;
+                g_cpu_enabled[g_cpu_count] = (u8)(la->flags & 1U);
+                g_cpu_count++;
+            }
 
             if (!g_bsp_found && (la->flags & 1U)) {
                 g_bsp_apic_id = la->apic_id;
@@ -174,6 +186,10 @@ void acpi_init(const void *rsdp_bytes)
 
 u32 acpi_bsp_apic_id(void)   { return g_bsp_apic_id; }
 u32 acpi_lapic_address(void) { return g_lapic_address; }
+
+u32 acpi_cpu_count(void)            { return g_cpu_count; }
+u32 acpi_cpu_apic_id(u32 index)     { return (index < g_cpu_count) ? g_cpu_apic_id[index] : 0U; }
+u8  acpi_cpu_enabled(u32 index)     { return (index < g_cpu_count) ? g_cpu_enabled[index] : 0U; }
 
 u32 acpi_ioapic_id(void)        { return g_ioapic_id; }
 u32 acpi_ioapic_address(void)   { return g_ioapic_address; }

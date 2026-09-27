@@ -178,8 +178,8 @@ void kernel_main(u32 magic, u32 phys_mbi)
         }
 
         console_set_color(0x0B);
-        console_printf("acpi: MADT parsed (bsp apic id=%u, ioapic id=%u base=0x%08X gsi_base=%u)\n",
-                       acpi_bsp_apic_id(), acpi_ioapic_id(),
+        console_printf("acpi: MADT parsed (bsp apic id=%u, cpus=%u, ioapic id=%u base=0x%08X gsi_base=%u)\n",
+                       acpi_bsp_apic_id(), acpi_cpu_count(), acpi_ioapic_id(),
                        acpi_ioapic_address(), acpi_ioapic_gsi_base());
     }
 
