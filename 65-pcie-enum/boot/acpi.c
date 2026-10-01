@@ -71,6 +71,14 @@ enum {
     MADT_TYPE_LAPIC_ADDR_OVERRIDE = 5U
 };
 
+struct acpi_mcfg_entry {
+    u64 base_address;
+    u16 pci_segment_group;
+    u8  start_bus;
+    u8  end_bus;
+    u32 reserved;
+} __attribute__((packed));
+
 #define ACPI_MAX_CPUS 16U
 
 static u32 g_bsp_apic_id;
@@ -89,6 +97,11 @@ static u32 g_ioapic_gsi_base;
 static u32 g_irq_to_gsi[16];
 static u8  g_irq_active_low[16];
 static u8  g_irq_level_triggered[16];
+
+static u64 g_mcfg_base;
+static u8  g_mcfg_start_bus;
+static u8  g_mcfg_end_bus;
+static int g_mcfg_found;
 
 static const struct acpi_sdt_header *acpi_table_at(u64 phys)
 {
@@ -153,6 +166,18 @@ static void madt_parse(const struct acpi_sdt_header *header)
     }
 }
 
+static void mcfg_parse(const struct acpi_sdt_header *header)
+{
+    const u8 *base = (const u8 *)header;
+    const struct acpi_mcfg_entry *entry =
+        (const struct acpi_mcfg_entry *)(base + sizeof(struct acpi_sdt_header) + 8U);
+
+    g_mcfg_base      = entry->base_address;
+    g_mcfg_start_bus = entry->start_bus;
+    g_mcfg_end_bus   = entry->end_bus;
+    g_mcfg_found     = 1;
+}
+
 static void acpi_scan_tables(const struct acpi_sdt_header *root, int is_xsdt)
 {
     const u8 *entries = (const u8 *)root + sizeof(struct acpi_sdt_header);
@@ -167,6 +192,8 @@ static void acpi_scan_tables(const struct acpi_sdt_header *root, int is_xsdt)
 
         if (acpi_sig_is(table, "APIC")) {
             madt_parse(table);
+        } else if (acpi_sig_is(table, "MCFG")) {
+            mcfg_parse(table);
         }
     }
 }
@@ -205,3 +232,8 @@ u32 acpi_ioapic_gsi_base(void)  { return g_ioapic_gsi_base; }
 u32 acpi_irq_to_gsi(u8 isa_irq)          { return g_irq_to_gsi[isa_irq]; }
 u8  acpi_irq_active_low(u8 isa_irq)      { return g_irq_active_low[isa_irq]; }
 u8  acpi_irq_level_triggered(u8 isa_irq) { return g_irq_level_triggered[isa_irq]; }
+
+int acpi_mcfg_found(void)     { return g_mcfg_found; }
+u64 acpi_mcfg_base(void)      { return g_mcfg_base; }
+u8  acpi_mcfg_start_bus(void) { return g_mcfg_start_bus; }
+u8  acpi_mcfg_end_bus(void)   { return g_mcfg_end_bus; }

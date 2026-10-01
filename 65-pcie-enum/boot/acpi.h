@@ -20,4 +20,9 @@ u32 acpi_irq_to_gsi(u8 isa_irq);
 u8  acpi_irq_active_low(u8 isa_irq);
 u8  acpi_irq_level_triggered(u8 isa_irq);
 
+int acpi_mcfg_found(void);
+u64 acpi_mcfg_base(void);
+u8  acpi_mcfg_start_bus(void);
+u8  acpi_mcfg_end_bus(void);
+
 #endif

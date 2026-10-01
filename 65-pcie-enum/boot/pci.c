@@ -1,9 +1,8 @@
 #include "pci.h"
+#include "acpi.h"
+#include "paging.h"
 
 enum {
-    PCI_CONFIG_ADDRESS = 0xCF8U,
-    PCI_CONFIG_DATA    = 0xCFCU,
-
     PCI_VENDOR_INVALID = 0xFFFFU,
 
     PCI_OFF_VENDOR_ID   = 0x00U,
@@ -20,35 +19,25 @@ enum {
     PCI_HEADER_MULTIFUNC = 1U << 7,
 
     PCI_BAR_COUNT    = 6U,
-    PCI_MAX_BUS      = 256U,
     PCI_MAX_DEVICE   = 32U,
     PCI_MAX_FUNCTION = 8U
 };
 
+#define PCI_ECAM_VADDR (KERNEL_OFFSET + 0x41002000ULL)
+
 static u32 device_count;
 
-static void outl(u16 port, u32 value)
-{
-    __asm__ volatile ("outl %0, %1" : : "a" (value), "Nd" (port));
-}
-
-static u32 inl(u16 port)
-{
-    u32 value;
-
-    __asm__ volatile ("inl %1, %0" : "=a" (value) : "Nd" (port));
-
-    return value;
-}
+static u64 g_ecam_base;
 
 static u32 pci_config_read32(u8 bus, u8 device, u8 function, u8 offset)
 {
-    u32 address = (1U << 31) | ((u32)bus << 16) | ((u32)device << 11) |
-                  ((u32)function << 8) | (offset & 0xFCU);
+    u64 phys = g_ecam_base + ((u64)bus << 20) + ((u64)device << 15) + ((u64)function << 12);
+    volatile u32 *window;
 
-    outl(PCI_CONFIG_ADDRESS, address);
+    page_map_mmio(PCI_ECAM_VADDR, (u32)phys);
+    window = (volatile u32 *)PCI_ECAM_VADDR;
 
-    return inl(PCI_CONFIG_DATA);
+    return window[(offset & 0xFCU) / 4U];
 }
 
 static u16 pci_config_read16(u8 bus, u8 device, u8 function, u8 offset)
@@ -187,14 +176,17 @@ void pci_scan(void)
 {
     u32 bus;
     u32 device;
+    u32 bus_limit;
 
     device_count = 0U;
+    g_ecam_base  = acpi_mcfg_base();
+    bus_limit    = acpi_mcfg_end_bus() + 1U;
 
     console_set_color(0x0BU);
-    console_printf("pci: scanning configuration space via 0x%03X/0x%03X\n",
-                   PCI_CONFIG_ADDRESS, PCI_CONFIG_DATA);
+    console_printf("pci: scanning configuration space via ECAM MMIO base=0x%016lX (bus 0-%u)\n",
+                   g_ecam_base, acpi_mcfg_end_bus());
 
-    for (bus = 0U; bus < PCI_MAX_BUS; bus++) {
+    for (bus = 0U; bus < bus_limit; bus++) {
         for (device = 0U; device < PCI_MAX_DEVICE; device++) {
             pci_scan_device((u8)bus, (u8)device);
         }
