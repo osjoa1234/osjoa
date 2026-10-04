@@ -26,7 +26,15 @@ I/O 큐 opcode는 admin과 별개 번호공간이다: Write `0x01`, Read `0x02`.
 
 **섹터 크기는 Identify Namespace에서 읽는다**: FLBAS[3:0]이 가리키는 LBAF 엔트리(offset `128 + 4*idx`)의 LBADS(bit 23:16) → `1 << LBADS`. QEMU는 512이고, 이 단계의 ext2 연결은 512를 전제하므로 다르면 I/O 큐 생성 전에 중단한다. NSZE도 저장해 `nvme_transfer`에서 LBA 범위를 검증한다.
 
-`nvme_transfer(opcode, lba, sectors, data_phys)`는 **한 페이지(4KB) 이내의 전송만** 처리한다 — PRP1에 데이터 페이지의 물리주소를 넣고 PRP2는 0이다. 요청이 한 페이지를 넘거나 범위를 벗어나면 -1이다.
+`nvme_transfer(opcode, lba, sectors, pages[])`가 PRP 규칙을 구현한다(`pages[]`는 4KB 페이지 물리주소 배열):
+
+| 전송 크기 | PRP1 | PRP2 |
+|---|---|---|
+| 1페이지 | `pages[0]` | 0 |
+| 2페이지 | `pages[0]` | `pages[1]` |
+| 3페이지 이상 | `pages[0]` | PRP 리스트 페이지 물리주소 (`pages[1..]` 8바이트 엔트리 배열) |
+
+PRP 리스트 페이지는 init에서 한 번 할당해 재사용한다(최대 512엔트리, 즉 최대 513페이지 전송). 데이터 페이지들은 물리적으로 연속일 필요가 없다는 점이 PRP 리스트의 핵심이다.
 
 ## 3) `nvme_read_sector`/`nvme_write_sector` (ata와 같은 모양)
 
@@ -36,7 +44,7 @@ I/O 큐 opcode는 admin과 별개 번호공간이다: Write `0x01`, Read `0x02`.
 
 - `boot/ext2.c`: `ata_read_sector`/`ata_write_sector` → `nvme_*`, `ATA_SECTOR_SIZE` → `NVME_SECTOR_SIZE`(`nvme.h`, 512), `#include "ata.h"` → `"nvme.h"`.
 - `boot/ata.c`, `boot/ata.h` **삭제**, `kernel.c`에서 `ata_init()` 호출 제거, Makefile에서 `ATAOBJ` 제거. ext2의 유일한 블록 디바이스가 NVMe가 됐으므로 죽은 코드를 남기지 않았다.
-- `nvme_init()`(I/O 큐까지 완성)은 `kheap_init()` 앞, `ext2_init()` 앞이라 ext2가 초기화될 때 이미 `g_io_ready`다. `page_alloc()`만 쓰므로 kheap이 필요 없다.
+- `nvme_init()`(I/O 큐, bounce 페이지, PRP 리스트 페이지까지 준비)은 `kheap_init()` 앞, `ext2_init()` 앞이라 ext2가 초기화될 때 이미 `g_io_ready`다. `page_alloc()`만 쓰므로 kheap이 필요 없다.
 
 ## 5) Makefile / QEMU / 디스크 이미지
 
@@ -91,7 +99,7 @@ QEMU 모니터(`-monitor unix:...`)의 `sendkey`로 키 입력을 보내 이 시
 
 | 파일 | 상태 | 설명 |
 |------|------|------|
-| `boot/nvme.c`, `boot/nvme.h` | 수정 | `struct nvme_queue`/`nvme_submit`(CID 검증 포함)로 admin/I/O 큐 공용화, Create I/O CQ/SQ, LBADS 파싱, 한 페이지 단위 `nvme_transfer`, bounce 기반 `nvme_read_sector`/`nvme_write_sector` |
+| `boot/nvme.c`, `boot/nvme.h` | 수정 | `struct nvme_queue`/`nvme_submit`(CID 검증 포함)로 admin/I/O 큐 공용화, Create I/O CQ/SQ, LBADS 파싱, PRP1/PRP2/PRP 리스트 `nvme_transfer`, bounce 기반 `nvme_read_sector`/`nvme_write_sector` |
 | `boot/ext2.c` | 수정 | 블록 I/O를 `ata_*`에서 `nvme_*`로 교체 |
 | `boot/kernel.c` | 수정 | `ata.h` include와 `ata_init()` 호출 제거 |
 | `boot/ata.c`, `boot/ata.h` | 삭제 | ext2의 블록 디바이스가 NVMe로 대체됨 |
@@ -104,8 +112,8 @@ QEMU 모니터(`-monitor unix:...`)의 `sendkey`로 키 입력을 보내 이 시
 
 ## 다음 단계 힌트
 
-- **PRP2와 PRP 리스트는 구현하지 않았다**: ext2는 항상 한 섹터(512B)씩 바운스 페이지 하나로 요청해서 PRP1만 쓰이고, 그 이상은 어떤 유저 동작으로도 실행되지 않는다. 실행되지 않는 분기를 검증 없이 두지 않으려고 뺐다. 여러 섹터를 한 번에 읽는 최적화(예: ext2 블록 1개를 한 커맨드로 읽기, 페이지 캐시)가 필요해지는 시점에 PRP2(두 페이지)와 PRP 리스트(세 페이지 이상, 데이터 페이지는 물리 비연속 가능)를 추가하고, 그때는 한 번에 여러 섹터를 요청하는 호출자가 있어 유저 동작으로 검증된다.
+- **PRP2와 PRP 리스트 분기는 셸 검증으로는 실행되지 않는다**: ext2는 항상 한 섹터(512B)씩 바운스 페이지 하나로 요청해서 PRP1만 쓰인다. 구현은 되어 있고, 이번 단계에서는 트리 밖 임시 테스트(1/2/5페이지를 같은 LBA에 쓰고 읽어 비교, 불일치 0)로 한 번 확인한 뒤 코드를 제거했다. 여러 섹터를 한 번에 읽는 호출자(예: ext2 블록 1개를 한 커맨드로, 페이지 캐시)가 생기면 그 동작이 곧 검증이 된다.
 - **완료 통지는 polling이다**: `68-msi-x`에서 같은 컨트롤러·큐를 재사용해 CDW11의 IEN/IV와 MSI-X 테이블 프로그래밍으로 바꾼다.
 - **섹터 크기 512 고정 전제**: LBADS가 다르면 init을 중단한다. 4KB 섹터 장치는 `ext2`의 `NVME_SECTOR_SIZE` 상수를 런타임 값으로 바꿔야 한다.
 - **한 커맨드 in-flight, 큐 깊이 64 미사용**: 제출 즉시 완료를 기다리므로 큐가 64개여도 1개만 쓴다. 비동기/다중 outstanding은 인터럽트 도입 뒤에 의미가 있다.
-- **MDTS(최대 전송 크기) 미확인**: 현재 한 번 전송은 한 페이지(4KB) 이하라 문제없지만, 큰 전송을 쓰게 되면 Identify Controller의 MDTS로 상한을 걸어야 한다.
+- **MDTS(최대 전송 크기) 미확인**: 현재 현재 호출자는 한 섹터씩만 보내 문제없지만, 큰 전송(PRP 리스트 최대 513페이지)을 쓰게 되면 Identify Controller의 MDTS로 상한을 걸어야 한다.
