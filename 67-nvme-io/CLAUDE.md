@@ -7,7 +7,7 @@
 66의 `nvme_identify`는 admin 큐 상태(`sq_tail`/`cq_head`/`phase`)를 인자 여섯 개로 넘겼다. I/O 큐가 생기면 같은 제출/폴링 로직을 두 큐가 공유해야 해서 `struct nvme_queue`(sq/cq 포인터, qid, entries, tail/head/phase)로 묶고, 커맨드 조립 + doorbell + phase 폴링을 `nvme_submit(queue, opcode, nsid, prp1, prp2, cdw10~12)` 하나로 뽑았다. doorbell 인덱스는 SQ tail `2*qid`, CQ head `2*qid+1`이다(stride 4 기준 admin `0x1000/0x1004`, I/O `0x1008/0x100C` — 66에서 매핑해둔 두 번째 페이지 안에 그대로 들어온다). `nvme_identify`는 이 위의 얇은 래퍼가 됐다.
 
 - **CID 검증 추가**: 제출마다 CID를 증가시켜 넣고, 완료 엔트리 dword3 하위 16비트(CID)가 같은지 확인한다(phase는 dword3 bit16, status는 상위 15비트). 처음에 CID를 dword2 상위로 착각해서 모든 커맨드가 -1로 실패했다 — CQE는 dword2 = SQ Head Pointer(15:0)+SQ ID(31:16), dword3 = CID(15:0)+Phase(16)+Status(31:17)다.
-- doorbell 쓰기 직전/완료 직후에 컴파일러 배리어(`asm volatile("" ::: "memory")`)를 넣어, SQE 쓰기가 doorbell 뒤로, DMA 데이터 읽기가 폴링 앞으로 재배치되지 않게 했다.
+- doorbell 쓰기 직전에 컴파일러 배리어(`asm volatile("" ::: "memory")`)를 하나 넣어, SQE 필드 쓰기가 doorbell 쓰기 뒤로 재배치되지 않게 했다. SQE 필드 쓰기는 일반 메모리 쓰기이고 doorbell과 값 의존성이 없어서, 컴파일러가 순서를 바꿔도 규칙 위반이 아니기 때문이다. 순서가 바뀌면 컨트롤러가 벨 직후 덜 채워진 슬롯을 읽는다. 완료 폴링 쪽에는 배리어를 두지 않았다 — 폴링 대상인 `cqe->status`가 `volatile`이라 루프 안 읽기와 그 뒤 `status` 읽기의 순서는 이미 보장되고, 데이터 버퍼를 읽는 코드는 `nvme_submit` 바깥(호출한 쪽)에 있어 이 루프 앞으로 올라올 일이 없다. x86은 CPU가 쓰기/읽기 순서를 하드웨어로 유지해서 컴파일러 배리어만으로 충분하다. 완료 폴링 뒤에 읽기 배리어가 필요해지는 경우(`nvme_submit` 인라인 방식 변경, 약한 메모리 모델 CPU로 이식 — 리눅스는 이 자리에 `dma_rmb()`를 둔다)는 그때 추가한다.
 
 ## 1) I/O 큐 생성 (admin 커맨드)
 

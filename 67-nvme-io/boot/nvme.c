@@ -153,7 +153,6 @@ static int nvme_submit(struct nvme_queue *q, u32 opcode, u32 nsid, u64 prp1, u64
         spins++;
         if (spins > NVME_WAIT_SPINS) return -1;
     }
-    __asm__ volatile("" ::: "memory");
 
     q->cq_head = (q->cq_head + 1U) % q->entries;
     if (q->cq_head == 0U) q->phase ^= 1U;
