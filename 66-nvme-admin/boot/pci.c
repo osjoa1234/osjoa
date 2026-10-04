@@ -273,12 +273,14 @@ void pci_enable_device(u8 bus, u8 device, u8 function)
 
 u64 pci_bar_address(u8 bus, u8 device, u8 function, u32 bar_index)
 {
-    u8  offset = (u8)(PCI_OFF_BAR0 + bar_index * 4U);
-    u32 bar    = pci_config_read32(bus, device, function, offset);
-    u32 type   = (bar >> 1U) & 0x3U;
-    u64 base   = bar & 0xFFFFFFF0U;
+    u8  offset     = (u8)(PCI_OFF_BAR0 + bar_index * 4U);
+    u32 bar        = pci_config_read32(bus, device, function, offset);
+    u32 is_io      = bar & 1U;
+    u32 addr_width = (bar >> 1U) & 0x3U;
+    u32 is_64bit   = (addr_width == 2U);
+    u64 base       = is_io ? (bar & 0xFFFFFFFCU) : (bar & 0xFFFFFFF0U);
 
-    if (type == 2U) {
+    if (!is_io && is_64bit) {
         u32 upper = pci_config_read32(bus, device, function, (u8)(offset + 4U));
 
         base |= (u64)upper << 32U;
