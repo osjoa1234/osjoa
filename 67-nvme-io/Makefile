@@ -287,10 +287,10 @@ $(DISKIMG): $(ROOTFSFILES) $(TESTGEN) $(BUSYBOXSRC) | $(BUILD)
 	mkdir -p $(ROOTFSBINDIR)
 	cp $(BUSYBOXSRC) $(ROOTFSBUSYBOX)
 	cd $(ROOTFSBINDIR) && for n in $(ROOTFSBINLINKS); do ln -sf busybox $$n; done
-	dd if=/dev/zero of=$@ bs=1M count=18 status=none
+	dd if=/dev/zero of=$@ bs=1M count=16 status=none
 	mkfs.ext2 -q -F -b 1024 -I 128 \
 	    -O sparse_super,filetype,^resize_inode,^dir_index,^ext_attr,^large_file,^huge_file,^uninit_bg,^flex_bg,^64bit,^metadata_csum \
-	    -d $(ROOTFSDIR) $@ 16384
+	    -d $(ROOTFSDIR) $@
 
 run: $(ISO) $(DISKIMG)
 	$(QEMU) $(QEMUMACHINE) -cdrom $(ISO) $(QEMUNVME)

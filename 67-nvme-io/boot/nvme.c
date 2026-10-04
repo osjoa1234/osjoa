@@ -28,10 +28,7 @@ enum {
     NVME_IO_QUEUE_ENTRIES    = 64U,
     NVME_IO_QID              = 1U,
 
-    NVME_PAGE_SIZE      = 0x1000U,
-    NVME_PRP_LIST_MAX   = NVME_PAGE_SIZE / 8U,
-    NVME_TEST_LBA       = 32768U,
-    NVME_TEST_MAX_PAGES = 5U
+    NVME_PAGE_SIZE = 0x1000U
 };
 
 #define NVME_MMIO_VADDR (KERNEL_OFFSET + 0x41003000ULL)
@@ -87,7 +84,6 @@ static u32 g_next_cid = 1U;
 static u32 g_sector_size;
 static u64 g_nsze;
 static u32 g_bounce_phys;
-static u32 g_prp_list_phys;
 static int g_io_ready;
 static struct nvme_queue g_admin;
 static struct nvme_queue g_io;
@@ -211,26 +207,12 @@ static int nvme_create_io_queues(u32 entries)
     return 0;
 }
 
-static int nvme_transfer(u32 opcode, u32 lba, u32 sectors, const u32 *pages)
+static int nvme_transfer(u32 opcode, u32 lba, u32 sectors, u32 data_phys)
 {
-    u32 bytes = sectors * g_sector_size;
-    u32 npages = (bytes + NVME_PAGE_SIZE - 1U) / NVME_PAGE_SIZE;
-    u64 prp2 = 0ULL;
-    u64 *list;
-    u32 i;
-
-    if (sectors == 0U || npages > NVME_PRP_LIST_MAX + 1U) return -1;
+    if (sectors == 0U || sectors * g_sector_size > NVME_PAGE_SIZE) return -1;
     if ((u64)lba + sectors > g_nsze) return -1;
 
-    if (npages == 2U) {
-        prp2 = (u64)pages[1];
-    } else if (npages > 2U) {
-        list = (u64 *)((u64)g_prp_list_phys + KERNEL_OFFSET);
-        for (i = 1U; i < npages; i++) list[i - 1U] = (u64)pages[i];
-        prp2 = (u64)g_prp_list_phys;
-    }
-
-    return nvme_submit(&g_io, opcode, 1U, (u64)pages[0], prp2,
+    return nvme_submit(&g_io, opcode, 1U, (u64)data_phys, 0ULL,
                        lba, 0U, sectors - 1U);
 }
 
@@ -240,7 +222,7 @@ int nvme_read_sector(u32 lba, u8 *buf)
     u32 i;
 
     if (!g_io_ready) return -1;
-    if (nvme_transfer(NVME_OPC_IO_READ, lba, 1U, &g_bounce_phys) != 0) return -1;
+    if (nvme_transfer(NVME_OPC_IO_READ, lba, 1U, g_bounce_phys) != 0) return -1;
 
     for (i = 0U; i < NVME_SECTOR_SIZE; i++) buf[i] = bounce[i];
     return 0;
@@ -254,91 +236,7 @@ int nvme_write_sector(u32 lba, const u8 *buf)
     if (!g_io_ready) return -1;
     for (i = 0U; i < NVME_SECTOR_SIZE; i++) bounce[i] = buf[i];
 
-    return nvme_transfer(NVME_OPC_IO_WRITE, lba, 1U, &g_bounce_phys) == 0 ? 0 : -1;
-}
-
-static void nvme_pattern_fill(const u32 *pages, u32 npages, u32 seed)
-{
-    u32 p;
-    u32 i;
-
-    for (p = 0U; p < npages; p++) {
-        u8 *bytes = (u8 *)((u64)pages[p] + KERNEL_OFFSET);
-
-        for (i = 0U; i < NVME_PAGE_SIZE; i++) {
-            bytes[i] = (u8)((p * NVME_PAGE_SIZE + i) * 7U + seed);
-        }
-    }
-}
-
-static u32 nvme_pattern_mismatches(const u32 *pages, u32 npages, u32 seed)
-{
-    u32 bad = 0U;
-    u32 p;
-    u32 i;
-
-    for (p = 0U; p < npages; p++) {
-        const u8 *bytes = (const u8 *)((u64)pages[p] + KERNEL_OFFSET);
-
-        for (i = 0U; i < NVME_PAGE_SIZE; i++) {
-            if (bytes[i] != (u8)((p * NVME_PAGE_SIZE + i) * 7U + seed)) bad++;
-        }
-    }
-
-    return bad;
-}
-
-static void nvme_selftest(u32 npages, const char *label)
-{
-    u32 wpages[NVME_TEST_MAX_PAGES];
-    u32 rpages[NVME_TEST_MAX_PAGES];
-    u32 sectors = npages * (NVME_PAGE_SIZE / g_sector_size);
-    u32 i;
-    u32 bad;
-    int status;
-
-    for (i = 0U; i < npages; i++) {
-        wpages[i] = page_alloc();
-        rpages[i] = page_alloc();
-        if (wpages[i] == 0U || rpages[i] == 0U) {
-            console_set_color(0x0CU);
-            console_printf("nvme: selftest allocation failed\n");
-            return;
-        }
-    }
-
-    nvme_pattern_fill(wpages, npages, 0x5AU + npages);
-
-    status = nvme_transfer(NVME_OPC_IO_WRITE, NVME_TEST_LBA, sectors, wpages);
-    if (status != 0) {
-        console_set_color(0x0CU);
-        console_printf("nvme: io write %s failed status=0x%X\n", label, (u32)status);
-        return;
-    }
-
-    nvme_pattern_fill(rpages, npages, 0x00U);
-
-    status = nvme_transfer(NVME_OPC_IO_READ, NVME_TEST_LBA, sectors, rpages);
-    if (status != 0) {
-        console_set_color(0x0CU);
-        console_printf("nvme: io read %s failed status=0x%X\n", label, (u32)status);
-        return;
-    }
-
-    bad = nvme_pattern_mismatches(rpages, npages, 0x5AU + npages);
-
-    if (bad == 0U) {
-        console_set_color(0x0AU);
-        console_printf("nvme: io %s write/read lba=%u sectors=%u ok\n", label, NVME_TEST_LBA, sectors);
-    } else {
-        console_set_color(0x0CU);
-        console_printf("nvme: io %s mismatch bytes=%u\n", label, bad);
-    }
-
-    for (i = 0U; i < npages; i++) {
-        page_free(wpages[i]);
-        page_free(rpages[i]);
-    }
+    return nvme_transfer(NVME_OPC_IO_WRITE, lba, 1U, g_bounce_phys) == 0 ? 0 : -1;
 }
 
 void nvme_init(void)
@@ -508,54 +406,12 @@ void nvme_init(void)
     console_set_color(0x0AU);
     console_printf("nvme: io queue ready (qid=%u, %u entries)\n", NVME_IO_QID, NVME_IO_QUEUE_ENTRIES);
 
-    g_bounce_phys   = page_alloc();
-    g_prp_list_phys = page_alloc();
-    if (g_bounce_phys == 0U || g_prp_list_phys == 0U) {
+    g_bounce_phys = page_alloc();
+    if (g_bounce_phys == 0U) {
         console_set_color(0x0CU);
         console_printf("nvme: io buffer allocation failed\n");
         return;
     }
 
-    if ((u64)NVME_TEST_LBA + NVME_TEST_MAX_PAGES * (NVME_PAGE_SIZE / g_sector_size) > g_nsze) {
-        console_set_color(0x0CU);
-        console_printf("nvme: namespace too small for selftest\n");
-        return;
-    }
-
-    nvme_selftest(1U, "prp1");
-    nvme_selftest(2U, "prp1+prp2");
-    nvme_selftest(NVME_TEST_MAX_PAGES, "prp-list");
-
     g_io_ready = 1;
-
-    {
-        u8 wbuf[NVME_SECTOR_SIZE];
-        u8 rbuf[NVME_SECTOR_SIZE];
-        u32 i;
-        u32 bad = 0U;
-
-        for (i = 0U; i < NVME_SECTOR_SIZE; i++) {
-            wbuf[i] = (u8)(i * 13U + 0x21U);
-            rbuf[i] = 0U;
-        }
-
-        if (nvme_write_sector(NVME_TEST_LBA + 1U, wbuf) != 0 ||
-            nvme_read_sector(NVME_TEST_LBA + 1U, rbuf) != 0) {
-            console_set_color(0x0CU);
-            console_printf("nvme: sector api failed\n");
-            return;
-        }
-
-        for (i = 0U; i < NVME_SECTOR_SIZE; i++) {
-            if (rbuf[i] != wbuf[i]) bad++;
-        }
-
-        if (bad == 0U) {
-            console_set_color(0x0AU);
-            console_printf("nvme: nvme_write_sector/nvme_read_sector lba=%u ok\n", NVME_TEST_LBA + 1U);
-        } else {
-            console_set_color(0x0CU);
-            console_printf("nvme: sector api mismatch bytes=%u\n", bad);
-        }
-    }
 }
