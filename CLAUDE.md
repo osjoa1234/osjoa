@@ -114,23 +114,24 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 65 | `65-pcie-enum` | PCIe 버스 스캔 — legacy config space I/O 포트(0xCF8/0xCFC)로 vendor/device ID·BAR·capability list 나열; PCIe도 첫 256바이트는 PCI와 호환이라 legacy 메커니즘으로 충분하고, extended config space(ECAM/MCFG)는 이번 범위(MSI-X capability는 legacy 256바이트 안에 있음)에서 필요 없어 보류 |
 | 66 | `66-nvme-admin` | PCIe 기반 NVMe 컨트롤러 admin queue 초기화 + Identify Controller/Namespace 커맨드 — `51-ata-pio`의 후속으로 AHCI는 건너뜀; 완료는 CQ phase bit polling으로 확인, 인터럽트는 아직 안 씀 |
 | 67 | `67-nvme-io` | NVMe I/O submission/completion queue 생성 + read/write 커맨드(PRP 리스트) — `51-ata-pio`가 ext2에 제공하던 sector read/write를 대체해 `52`~`62` ext2/셸 스택이 NVMe 경유로도 동작하는지 재검증; 완료 통지는 여전히 polling |
-| 68 | `68-msi-x` | PCI capability list에서 MSI-X 캐퍼빌리티 구조체(메시지 테이블/PBA) 파싱 + 프로그래밍 — `67-nvme-io`의 NVMe 컨트롤러를 그대로 재사용해 polling 대신 MSI-X 인터럽트로 완료 통지가 들어오는지만 검증, 새 디바이스 드라이버는 추가하지 않음; destination은 `64-apic`의 xAPIC ID |
-| 69 | `69-nic-rtl8139` | PCI 기반 rtl8139 NIC 드라이버 — 레지스터 초기화, 패킷 송수신(raw 이더넷 프레임 loopback으로 드라이버만 검증); rtl8139는 MSI 미지원 장치라 legacy INTx로 남는 사례 |
-| 70 | `70-ethernet-arp` | 이더넷 프레임 파싱 + ARP 요청/응답 |
-| 71 | `71-ip-icmp` | IPv4 헤더 처리 + ICMP — `ping` 응답으로 검증 |
-| 72 | `72-udp` | UDP 송수신 |
-| 73 | `73-tcp` | TCP 상태 머신(3-way handshake, 데이터 전송, 종료) |
-| 74 | `74-socket-syscall` | BSD 소켓 syscall(`socket`/`bind`/`listen`/`accept`/`connect`/`send`/`recv`) 유저 공간 노출 |
-| 75 | `75-net-apps` | busybox `nc`/`wget` 등으로 실제 네트워크 애플리케이션 실행 검증 |
-| 76 | `76-chroot` | `chroot` syscall + VFS 루트 교체 |
-| 77 | `77-mount-ns` | 프로세스별 마운트 테이블(mount namespace) — `32-vfs-open`의 전역 마운트 테이블을 `clone` 플래그로 분리 가능하게 확장 |
-| 78 | `78-pid-ns` | PID 네임스페이스 — 네임스페이스 내부에서 pid 1로 보이는 격리된 프로세스 트리 |
-| 79 | `79-uts-ns` | UTS 네임스페이스 — `sethostname`/`uname` 격리 |
-| 80 | `80-net-ns` | 네트워크 네임스페이스 — `70~75` 네트워크 스택을 네임스페이스별로 격리(가상 인터페이스/loopback) |
-| 81 | `81-cgroup-lite` | cgroup 유사 리소스 제한 그룹 — 메모리/CPU 사용량 제한 |
-| 82 | `82-container-runtime` | 네임스페이스(77~80)+cgroup(81)을 `unshare` 스타일 `clone` 플래그 조합으로 묶는 "컨테이너 실행기" 완성 — 최종 목표(컨테이너) 달성 지점 |
+| 68 | `68-msi-x` | PCI capability list에서 MSI-X 캐퍼빌리티 구조체(메시지 테이블/PBA) 파싱 + 프로그래밍 + IDT 핸들러 등록 — `67-nvme-io`의 NVMe 컨트롤러를 그대로 재사용해 **admin CQ(IV 0) 하나만** polling 대신 MSI-X 인터럽트로 완료 통지가 들어오는지 검증, I/O 경로(폴링)는 그대로 둠, 새 디바이스 드라이버는 추가하지 않음; destination은 `64-apic`의 xAPIC ID |
+| 69 | `69-msi-x-nvme-io` | NVMe I/O CQ를 MSI-X로 전환 — create IO CQ의 CDW11에서 인터럽트 활성화 + IV 1(테이블 엔트리 2번째), I/O 완료 polling 제거, `52`~`62` ext2/셸 스택이 인터럽트 경로로도 동작하는지 재검증 |
+| 70 | `70-nic-rtl8139` | PCI 기반 rtl8139 NIC 드라이버 — 레지스터 초기화, 패킷 송수신(raw 이더넷 프레임 loopback으로 드라이버만 검증); rtl8139는 MSI 미지원 장치라 legacy INTx로 남는 사례 |
+| 71 | `71-ethernet-arp` | 이더넷 프레임 파싱 + ARP 요청/응답 |
+| 72 | `72-ip-icmp` | IPv4 헤더 처리 + ICMP — `ping` 응답으로 검증 |
+| 73 | `73-udp` | UDP 송수신 |
+| 74 | `74-tcp` | TCP 상태 머신(3-way handshake, 데이터 전송, 종료) |
+| 75 | `75-socket-syscall` | BSD 소켓 syscall(`socket`/`bind`/`listen`/`accept`/`connect`/`send`/`recv`) 유저 공간 노출 |
+| 76 | `76-net-apps` | busybox `nc`/`wget` 등으로 실제 네트워크 애플리케이션 실행 검증 |
+| 77 | `77-chroot` | `chroot` syscall + VFS 루트 교체 |
+| 78 | `78-mount-ns` | 프로세스별 마운트 테이블(mount namespace) — `32-vfs-open`의 전역 마운트 테이블을 `clone` 플래그로 분리 가능하게 확장 |
+| 79 | `79-pid-ns` | PID 네임스페이스 — 네임스페이스 내부에서 pid 1로 보이는 격리된 프로세스 트리 |
+| 80 | `80-uts-ns` | UTS 네임스페이스 — `sethostname`/`uname` 격리 |
+| 81 | `81-net-ns` | 네트워크 네임스페이스 — `71~76` 네트워크 스택을 네임스페이스별로 격리(가상 인터페이스/loopback) |
+| 82 | `82-cgroup-lite` | cgroup 유사 리소스 제한 그룹 — 메모리/CPU 사용량 제한 |
+| 83 | `83-container-runtime` | 네임스페이스(78~81)+cgroup(82)을 `unshare` 스타일 `clone` 플래그 조합으로 묶는 "컨테이너 실행기" 완성 — 최종 목표(컨테이너) 달성 지점 |
 
-12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → Linux ABI 호환 → **37~40에서 64비트 전환** → 외부 바이너리 실행 → **61~62에서 60의 미해결 항목 마무리** → **63~69에서 Multiboot2/APIC/PCIe/NVMe/MSI-X로 하드웨어 확장**(63 Multiboot2로 ACPI RSDP를 받아 64 APIC의 MADT 파싱 전제조건으로 삼고, PCI는 legacy 대신 처음부터 PCIe로, AHCI는 건너뛰고 66~67 NVMe로 `51-ata-pio`를 대체한 뒤 68에서 그 NVMe 컨트롤러의 완료 통지를 polling에서 MSI-X로 전환) → **70~75에서 네트워크 스택** → **76~82에서 네임스페이스/cgroup 기반 컨테이너**(이 프로젝트의 최종 목표) 순서로 기반을 쌓는다. VT-x 기반 하드웨어 가상화(하이퍼바이저)는 이 로드맵의 범위 밖이다.
+12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → Linux ABI 호환 → **37~40에서 64비트 전환** → 외부 바이너리 실행 → **61~62에서 60의 미해결 항목 마무리** → **63~70에서 Multiboot2/APIC/PCIe/NVMe/MSI-X로 하드웨어 확장**(63 Multiboot2로 ACPI RSDP를 받아 64 APIC의 MADT 파싱 전제조건으로 삼고, PCI는 legacy 대신 처음부터 PCIe로, AHCI는 건너뛰고 66~67 NVMe로 `51-ata-pio`를 대체한 뒤 68~69에서 그 NVMe 컨트롤러의 완료 통지를 polling에서 MSI-X로 전환(68 admin CQ, 69 I/O CQ)) → **71~76에서 네트워크 스택** → **77~83에서 네임스페이스/cgroup 기반 컨테이너**(이 프로젝트의 최종 목표) 순서로 기반을 쌓는다. VT-x 기반 하드웨어 가상화(하이퍼바이저)는 이 로드맵의 범위 밖이다.
 
 순서·이름은 진행 중 자유롭게 조정 가능.
 
