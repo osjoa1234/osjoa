@@ -16,11 +16,11 @@ Create I/O Completion Queue(opcode `0x05`)의 CDW11은 다음 필드로 이루�
 
 ## 1) 핸들러 공용화와 폴링 제거
 
-- `nvme_irq(q)`: 68의 `nvme_admin_irq` 본문을 큐 인자를 받는 형태로 일반화했다. phase 확인 → `nvme_reap` → `q->result` 저장 → `q->irq_count++` → `q->done = 1`. `interrupts_register_handler`가 받는 핸들러는 인자 없는 `void(void)`라서 `nvme_admin_irq`/`nvme_io_irq` 얇은 래퍼 두 개가 각각 `g_admin`/`g_io`를 넘긴다(리눅스의 `request_irq(..., dev_id)`에 해당하는 컨텍스트 인자는 아직 없음).
+- `nvme_irq(q)`: 68의 `nvme_admin_irq` 본문을 큐 인자를 받는 형태로 일반화했다. phase 확인 → `nvme_reap` → `q->result` 저장 → `q->irq_count++` → `q->done = 1` → `q->waiter`가 있으면 `thread_unpark`. `interrupts_register_handler`가 받는 핸들러는 인자 없는 `void(void)`라서 `nvme_admin_irq`/`nvme_io_irq` 얇은 래퍼 두 개가 각각 `g_admin`/`g_io`를 넘긴다(리눅스의 `request_irq(..., dev_id)`에 해당하는 컨텍스트 인자는 아직 없음).
 - `struct nvme_queue`에서 `use_irq`를 지우고, 전역 `g_admin_irq_count` 대신 큐별 `irq_count`를 둔다. `nvme_submit`의 phase 폴링 분기는 삭제했다 — admin/I/O 어느 큐든 doorbell 뒤에는 항상 `nvme_wait_irq`다.
 - `nvme_report()`(신규, `boot/nvme.h`에 선언): 커널이 `ext2_init()` 직후 부르면 `io completions via msix: N interrupt(s)`를 출력한다. I/O CQ가 정말 인터럽트로 완료됐는지 보는 카운터다.
 
-## 2) `nvme_wait_irq` 정리
+## 2) `nvme_wait_irq` 정리 (스레드 park + 부팅 초기 `hlt` 폴백)
 
 68의 `nvme_wait_irq`는 `sti` 후 스핀 상한만큼 도는 우회였다. I/O 경로는 `interrupts_enable()` 이후(IF=1)에도 호출되고 `nvme_init`/`ext2_init` 시점에는 IF=0으로 호출되므로 두 경우를 한 구현으로 처리해야 한다.
 
@@ -29,11 +29,12 @@ flags = RFLAGS
 loop:
     cli
     if done: break
-    sti; hlt
+    if thread_current(): waiter = current; thread_park(); waiter = 0
+    else: sti; hlt
 if flags.IF: sti
 ```
 
-- `cli` 후에 `done`을 확인하고, 아직이면 `sti; hlt`로 잔다. `sti`는 바로 다음 명령(`hlt`)이 끝날 때까지 인터럽트를 미루므로 "확인한 뒤 `hlt` 사이에 인터럽트가 끼어 깨우기를 놓치는" 경합이 없다. IF=1로 호출돼도 같은 이유로 `cli`로 시작한다.
+- `cli` 후에 `done`을 확인하고, 아직이면 잔다. `threads_init` 이후(`thread_current() != 0`)에는 `q->waiter`에 자기 스레드를 적고 `thread_park`으로 재워 CPU를 다른 스레드에 양보하고, 완료 핸들러가 `thread_unpark`로 깨운다. `nvme_init`/`ext2_init`처럼 스레드가 없는 부팅 초기에는 `sti; hlt`로 쉰다. `cli`로 확인한 뒤 `thread_park`이 PARKED를 세팅할 때까지 인터럽트가 안 들어와서 unpark를 놓치는 경합이 없다. `wait_queue_t`를 안 쓰는 이유는 `wq_add`/`wq_wake_all`이 `kmalloc`/`kfree`를 써서 인터럽트 핸들러에서 부르면 힙이 깨질 수 있기 때문이다 — 큐당 outstanding 커맨드가 1개라 waiter 포인터 하나로 충분하다. `hlt` 쪽에서는 `sti`가 바로 다음 명령(`hlt`)이 끝날 때까지 인터럽트를 미루므로 "확인한 뒤 `hlt` 사이에 인터럽트가 끼어 깨우기를 놓치는" 경합이 없다. IF=1로 호출돼도 같은 이유로 `cli`로 시작한다.
 - 함수가 끝나면 호출 시점의 IF를 복원한다(IF=0이었으면 `cli` 상태 그대로).
 - 스핀 상한은 없어졌다 — CPU를 계속 돌리는 대신 `hlt`로 쉬므로 의미가 없고, 인터럽트가 영영 안 오면 그대로 멈춘다(실패 모드가 "무한 대기 대신 폴링 타임아웃"에서 "hang"으로 바뀜). 타임아웃은 tick이 있어야 의미가 있는데 `nvme_init` 시점엔 타이머가 아직 없어서 다음 단계 이후로 둔다.
 - 동시에 두 스레드가 `nvme_submit`을 호출하면 `done`/`result`가 섞일 수 있지만, 디스크 I/O 경로는 `61-io-lock`의 `g_ext2_lock`(wait queue 기반 잠금)으로 이미 직렬화돼 있어 큐당 outstanding 커맨드는 항상 1개다.
@@ -68,10 +69,11 @@ shell: ext2 /disk/hello.txt: hello ext2 root fs
 
 | 파일 | 상태 | 설명 |
 |------|------|------|
-| `boot/nvme.c` | 수정 | I/O CQ IEN+IV 1, 엔트리 1/vector `0x31` 등록, `nvme_irq`/`nvme_io_irq`, `use_irq`·폴링 제거, `hlt` 기반 `nvme_wait_irq`, 큐별 `irq_count`, `nvme_report` |
+| `boot/nvme.c` | 수정 | I/O CQ IEN+IV 1, 엔트리 1/vector `0x31` 등록, `nvme_irq`/`nvme_io_irq`, `use_irq`·폴링 제거, `thread_park`/`hlt` 폴백 `nvme_wait_irq`, `nvme_queue.waiter`, 큐별 `irq_count`, `nvme_report` |
 | `boot/nvme.h` | 수정 | `nvme_report` 선언 |
 | `boot/kernel.c` | 수정 | `ext2_init()` 뒤 `nvme_report()` 호출 |
-| 나머지 전부 | 변경 없음 | 68의 파일 그대로 (`Makefile` 포함 — 의존성이 이미 충분) |
+| `Makefile` | 수정 | `nvme.o` 의존성에 `thread.h` 추가 |
+| 나머지 전부 | 변경 없음 | 68의 파일 그대로 |
 
 ## 완료 기준
 
@@ -79,7 +81,7 @@ shell: ext2 /disk/hello.txt: hello ext2 root fs
 
 ## 다음 단계 힌트
 
-- **복수 outstanding 커맨드는 아직 없음**: 큐당 커맨드 1개만 제출하고 기다린다. 인터럽트 기반이라 CPU는 놀지만(`hlt`) 스레드를 양보하지는 않는다. 진짜 비동기(cid별 완료 추적 + wait queue로 `thread_park`)는 NVMe가 더 필요한 단계에서 다룬다.
+- **복수 outstanding 커맨드는 아직 없음**: 큐당 커맨드 1개만 제출하고 기다린다(waiter 포인터 1개). 대기 중 CPU는 양보하지만 한 큐에 여러 커맨드를 동시에 걸지는 못한다. 진짜 비동기(cid별 완료 추적 + 인터럽트 안전한 wait queue)는 NVMe가 더 필요한 단계에서 다룬다.
 - **`nvme_wait_irq` 타임아웃 없음**: 인터럽트가 누락되면 hang. 타이머 tick 기반 타임아웃은 `nvme_init` 이후 구간에서만 가능하다.
 - **핸들러 컨텍스트 인자 없음**: `nvme_admin_irq`/`nvme_io_irq` 래퍼는 큐가 전역 하나씩이라 성립한다. 컨트롤러가 둘 이상이면 `request_irq`처럼 `dev_id`를 넘겨야 한다.
 - **MSI-X vector `0x30`/`0x31` 하드코딩, 벡터 할당기 없음**: 70 rtl8139는 MSI 미지원이라 legacy INTx(IOAPIC 경유)를 쓰는 사례로 이어진다.

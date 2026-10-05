@@ -176,7 +176,7 @@ $(APICOBJ): boot/apic.c boot/apic.h boot/acpi.h boot/paging.h boot/console.h | $
 $(PCIOBJ): boot/pci.c boot/pci.h boot/console.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(NVMEOBJ): boot/nvme.c boot/nvme.h boot/pci.h boot/apic.h boot/interrupts.h boot/paging.h boot/phys_mem.h boot/console.h | $(BUILD)
+$(NVMEOBJ): boot/nvme.c boot/nvme.h boot/pci.h boot/apic.h boot/interrupts.h boot/thread.h boot/paging.h boot/phys_mem.h boot/console.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(KERNELOBJ): boot/kernel.c boot/acpi.h boot/apic.h boot/ext2.h boot/gdt.h boot/nvme.h boot/pci.h boot/syscall.h boot/pipe.h boot/phys_mem.h boot/console.h | $(BUILD)

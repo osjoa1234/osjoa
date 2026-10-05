@@ -2,6 +2,7 @@
 #include "pci.h"
 #include "apic.h"
 #include "interrupts.h"
+#include "thread.h"
 #include "paging.h"
 #include "phys_mem.h"
 
@@ -93,6 +94,7 @@ struct nvme_queue {
     volatile u32 done;
     volatile u32 result;
     volatile u32 irq_count;
+    thread_t *volatile waiter;
 };
 
 static u32 g_stride;
@@ -154,6 +156,7 @@ static void nvme_irq(struct nvme_queue *q)
     q->result = nvme_reap(q);
     q->irq_count++;
     q->done = 1U;
+    if (q->waiter) thread_unpark(q->waiter);
 }
 
 static void nvme_admin_irq(void)
@@ -175,7 +178,14 @@ static void nvme_wait_irq(struct nvme_queue *q)
     for (;;) {
         __asm__ volatile ("cli" : : : "memory");
         if (q->done) break;
-        __asm__ volatile ("sti; hlt" : : : "memory");
+
+        if (thread_current()) {
+            q->waiter = thread_current();
+            thread_park();
+            q->waiter = 0;
+        } else {
+            __asm__ volatile ("sti; hlt" : : : "memory");
+        }
     }
 
     if (flags & RFLAGS_IF) __asm__ volatile ("sti" : : : "memory");
@@ -243,6 +253,7 @@ static int nvme_create_io_queues(u32 entries)
     g_io.cq_head = 0U;
     g_io.phase   = 1U;
     g_io.done    = 0U;
+    g_io.waiter  = 0;
 
     status = nvme_submit(&g_admin, NVME_OPC_CREATE_IO_CQ, 0U, (u64)cq_phys, 0ULL,
                          ((entries - 1U) << 16U) | NVME_IO_QID,
@@ -402,6 +413,7 @@ void nvme_init(void)
     g_admin.cq_head = 0U;
     g_admin.phase   = 1U;
     g_admin.done    = 0U;
+    g_admin.waiter  = 0;
 
     {
         u32 i;
