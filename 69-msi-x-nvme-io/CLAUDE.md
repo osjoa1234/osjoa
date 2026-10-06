@@ -84,5 +84,5 @@ shell: ext2 /disk/hello.txt: hello ext2 root fs
 - **복수 outstanding 커맨드는 아직 없음**: 큐당 커맨드 1개만 제출하고 기다린다(waiter 포인터 1개). 대기 중 CPU는 양보하지만 한 큐에 여러 커맨드를 동시에 걸지는 못한다. 진짜 비동기(cid별 완료 추적 + 인터럽트 안전한 wait queue)는 NVMe가 더 필요한 단계에서 다룬다.
 - **`nvme_wait_irq` 타임아웃 없음**: 인터럽트가 누락되면 hang. 타이머 tick 기반 타임아웃은 `nvme_init` 이후 구간에서만 가능하다.
 - **핸들러 컨텍스트 인자 없음**: `nvme_admin_irq`/`nvme_io_irq` 래퍼는 큐가 전역 하나씩이라 성립한다. 컨트롤러가 둘 이상이면 `request_irq`처럼 `dev_id`를 넘겨야 한다.
-- **MSI-X vector `0x30`/`0x31` 하드코딩, 벡터 할당기 없음**: 70 rtl8139는 MSI 미지원이라 legacy INTx(IOAPIC 경유)를 쓰는 사례로 이어진다.
+- **MSI-X vector `0x30`/`0x31` 하드코딩, 벡터 할당기 없음**: 70 virtio-net이 다음 vector(`0x32`/`0x33`)를 같은 방식으로 쓴다.
 - **MSI-X 인터럽트 CPU 고정**: 모든 엔트리가 `apic_id()`(BSP)로 향한다. SMP/CPU별 큐는 범위 밖.

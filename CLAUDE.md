@@ -116,7 +116,7 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 67 | `67-nvme-io` | NVMe I/O submission/completion queue 생성 + read/write 커맨드(PRP 리스트) — `51-ata-pio`가 ext2에 제공하던 sector read/write를 대체해 `52`~`62` ext2/셸 스택이 NVMe 경유로도 동작하는지 재검증; 완료 통지는 여전히 polling |
 | 68 | `68-msi-x` | PCI capability list에서 MSI-X 캐퍼빌리티 구조체(메시지 테이블/PBA) 파싱 + 프로그래밍 + IDT 핸들러 등록 — `67-nvme-io`의 NVMe 컨트롤러를 그대로 재사용해 **admin CQ(IV 0) 하나만** polling 대신 MSI-X 인터럽트로 완료 통지가 들어오는지 검증, I/O 경로(폴링)는 그대로 둠, 새 디바이스 드라이버는 추가하지 않음; destination은 `64-apic`의 xAPIC ID |
 | 69 | `69-msi-x-nvme-io` | NVMe I/O CQ를 MSI-X로 전환 — create IO CQ의 CDW11에서 인터럽트 활성화 + IV 1(테이블 엔트리 2번째), I/O 완료 polling 제거, `52`~`62` ext2/셸 스택이 인터럽트 경로로도 동작하는지 재검증 |
-| 70 | `70-nic-rtl8139` | PCI 기반 rtl8139 NIC 드라이버 — 레지스터 초기화, 패킷 송수신(raw 이더넷 프레임 loopback으로 드라이버만 검증); rtl8139는 MSI 미지원 장치라 legacy INTx로 남는 사례 |
+| 70 | `70-nic-virtio` | PCI 기반 virtio-net(modern, `disable-legacy=on`) NIC 드라이버 — vendor capability로 common/notify/device 영역 탐색, feature 협상, receiveq/transmitq virtqueue 설정, 큐별 MSI-X 완료 통지; rtl8139는 MSI 미지원이라 제외; loopback이 없어 박아둔 raw ARP 요청 프레임으로 QEMU user 게이트웨이 응답을 받아 드라이버만 검증 |
 | 71 | `71-ethernet-arp` | 이더넷 프레임 파싱 + ARP 요청/응답 |
 | 72 | `72-ip-icmp` | IPv4 헤더 처리 + ICMP — `ping` 응답으로 검증 |
 | 73 | `73-udp` | UDP 송수신 |
