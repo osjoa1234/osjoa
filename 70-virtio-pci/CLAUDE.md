@@ -22,11 +22,11 @@ virtio는 NVMe처럼 BAR0에 레지스터가 고정돼 있지 않아서 capabili
 
 ### 2-2) capability 순회 (`virtio_find_capabilities`)
 
-ID `0x09` capability를 `pci_next_capability`로 하나씩 따라가며 각 capability에서 `cfg_type`(+3), `bar`(+4), `offset`(+8), `length`(+12)를 읽는다. 영역의 물리 주소는 `pci_bar_address(bar) + offset`이다. `cfg_type`이 1(common cfg), 2(notify), 4(device cfg)인 것만 `page_map_mmio`로 한 페이지 매핑하고 전역에 저장한다. notify는 `+16`의 `notify_off_multiplier`도 저장한다. ISR(3)은 INTx 전용이라 MSI-X 기반인 이 드라이버에서는 건너뛴다. 세 영역을 모두 찾지 못하면 실패(`-1`)다.
+ID `0x09` capability를 `pci_next_capability`로 하나씩 따라가며 각 capability에서 `cfg_type`(+3), `bar`(+4), `offset`(+8), `length`(+12)를 읽는다. 영역의 물리 주소는 `pci_bar_address(bar) + offset`이다. `cfg_type`이 1(common cfg), 2(notify), 4(device cfg)인 것만 `virtio_map_region(vaddr, phys, length)`로 매핑하고 전역에 저장한다. 영역이 페이지 중간에서 시작하면 `length`가 0x1000이어도 두 페이지에 걸치므로, 매핑 페이지 수는 `((phys & 0xFFF) + length + 0xFFF) >> 12`로 구해 `page_map_mmio`를 페이지 수만큼 반복한다. 영역당 가상 주소 창은 4페이지(`VIRTIO_REGION_PAGES`)이고 이를 넘는 영역은 매핑 실패(`NULL`)로 처리해 해당 영역을 못 찾은 것으로 본다. notify는 `+16`의 `notify_off_multiplier`도 저장한다. ISR(3)은 INTx 전용이라 MSI-X 기반인 이 드라이버에서는 건너뛴다. 세 영역을 모두 찾지 못하면 실패(`-1`)다.
 
-QEMU에서는 전부 BAR4(64비트 MMIO, `0xFE000000`)의 `0x0000`(common)/`0x2000`(device)/`0x3000`(notify)에 있고 길이는 모두 `0x1000`이라 한 페이지 매핑으로 충분하다.
+QEMU에서는 전부 BAR4(64비트 MMIO, `0xFE000000`)의 `0x0000`(common)/`0x2000`(device)/`0x3000`(notify)에 있고 길이는 모두 `0x1000`이다. 전부 페이지 정렬이라 실제로는 영역당 한 페이지만 매핑된다.
 
-매핑에 쓰는 커널 가상 주소는 `0x41006000`/`0x41007000`/`0x41008000`(`KERNEL_OFFSET` 기준)이다. 기존 `0x41000000`(LAPIC) ~ `0x41005000`(MSI-X 창)과 겹치지 않는다.
+매핑에 쓰는 커널 가상 주소는 `0x41006000`/`0x4100A000`/`0x4100E000`(`KERNEL_OFFSET` 기준, 영역당 4페이지 창)이다. 기존 `0x41000000`(LAPIC) ~ `0x41005000`(MSI-X 창)과 겹치지 않는다.
 
 ### 2-3) 매핑 확인
 

@@ -10,12 +10,14 @@ enum {
 
     VIRTIO_CAP_COMMON = 1U,
     VIRTIO_CAP_NOTIFY = 2U,
-    VIRTIO_CAP_DEVICE = 4U
+    VIRTIO_CAP_DEVICE = 4U,
+
+    VIRTIO_REGION_PAGES = 4U
 };
 
 #define VIRTIO_COMMON_VADDR (KERNEL_OFFSET + 0x41006000ULL)
-#define VIRTIO_NOTIFY_VADDR (KERNEL_OFFSET + 0x41007000ULL)
-#define VIRTIO_DEVICE_VADDR (KERNEL_OFFSET + 0x41008000ULL)
+#define VIRTIO_NOTIFY_VADDR (KERNEL_OFFSET + 0x4100A000ULL)
+#define VIRTIO_DEVICE_VADDR (KERNEL_OFFSET + 0x4100E000ULL)
 
 struct virtio_common_cfg {
     volatile u32 device_feature_select;
@@ -44,9 +46,18 @@ static u8  *g_device_cfg;
 static u64 g_notify_base;
 static u32 g_notify_multiplier;
 
-static u8 *virtio_map_region(u64 vaddr, u64 phys)
+static u8 *virtio_map_region(u64 vaddr, u64 phys, u32 length)
 {
-    page_map_mmio(vaddr, (u32)(phys & ~0xFFFULL));
+    u32 pages = (u32)(((phys & 0xFFFULL) + length + 0xFFFULL) >> 12);
+    u32 i;
+
+    if (pages > VIRTIO_REGION_PAGES) {
+        return 0;
+    }
+
+    for (i = 0U; i < pages; i++) {
+        page_map_mmio(vaddr + ((u64)i << 12), (u32)((phys & ~0xFFFULL) + ((u64)i << 12)));
+    }
 
     return (u8 *)(vaddr + (phys & 0xFFFULL));
 }
@@ -66,18 +77,18 @@ static int virtio_find_capabilities(u8 bus, u8 device, u8 function)
         u64 phys     = pci_bar_address(bus, device, function, bar) + offset;
 
         if (cfg_type == VIRTIO_CAP_COMMON) {
-            g_common = (struct virtio_common_cfg *)virtio_map_region(VIRTIO_COMMON_VADDR, phys);
-            have_common = 1;
+            g_common = (struct virtio_common_cfg *)virtio_map_region(VIRTIO_COMMON_VADDR, phys, length);
+            have_common = g_common != 0;
             console_printf("virtio-net: common cfg bar=%u offset=0x%X length=0x%X\n", bar, offset, length);
         } else if (cfg_type == VIRTIO_CAP_NOTIFY) {
             g_notify_multiplier = pci_config_read32(bus, device, function, (u8)(cap + 16U));
-            g_notify_base       = (u64)virtio_map_region(VIRTIO_NOTIFY_VADDR, phys);
-            have_notify = 1;
+            g_notify_base       = (u64)virtio_map_region(VIRTIO_NOTIFY_VADDR, phys, length);
+            have_notify = g_notify_base != 0ULL;
             console_printf("virtio-net: notify bar=%u offset=0x%X length=0x%X multiplier=%u\n",
                            bar, offset, length, g_notify_multiplier);
         } else if (cfg_type == VIRTIO_CAP_DEVICE) {
-            g_device_cfg = virtio_map_region(VIRTIO_DEVICE_VADDR, phys);
-            have_device = 1;
+            g_device_cfg = virtio_map_region(VIRTIO_DEVICE_VADDR, phys, length);
+            have_device = g_device_cfg != 0;
             console_printf("virtio-net: device cfg bar=%u offset=0x%X length=0x%X\n", bar, offset, length);
         }
     }
