@@ -217,7 +217,6 @@ void kernel_main(u32 magic, u32 phys_mbi)
     }
 
     nvme_report();
-    virtio_net_report();
 
     {
         const struct multiboot2_tag_module *mod =

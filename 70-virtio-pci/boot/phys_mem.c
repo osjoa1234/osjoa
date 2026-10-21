@@ -100,28 +100,6 @@ u32 page_alloc(void)
     return 0U;
 }
 
-u32 page_alloc_contig(u32 count)
-{
-    u32 i;
-    u32 run = 0U;
-
-    for (i = 0U; i < TOTAL_PAGES; i++) {
-        if (bitmap[i / 32U] & (1U << (i % 32U))) {
-            run++;
-            if (run == count) {
-                u32 first = i + 1U - count;
-
-                range_mark_used(first, i + 1U);
-                return first * PAGE_SIZE;
-            }
-        } else {
-            run = 0U;
-        }
-    }
-
-    return 0U;
-}
-
 void page_free(u32 addr)
 {
     u32 page = addr / PAGE_SIZE;

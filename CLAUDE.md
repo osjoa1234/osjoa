@@ -116,15 +116,17 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 67 | `67-nvme-io` | NVMe I/O submission/completion queue 생성 + read/write 커맨드(PRP 리스트) — `51-ata-pio`가 ext2에 제공하던 sector read/write를 대체해 `52`~`62` ext2/셸 스택이 NVMe 경유로도 동작하는지 재검증; 완료 통지는 여전히 polling |
 | 68 | `68-msi-x` | PCI capability list에서 MSI-X 캐퍼빌리티 구조체(메시지 테이블/PBA) 파싱 + 프로그래밍 + IDT 핸들러 등록 — `67-nvme-io`의 NVMe 컨트롤러를 그대로 재사용해 **admin CQ(IV 0) 하나만** polling 대신 MSI-X 인터럽트로 완료 통지가 들어오는지 검증, I/O 경로(폴링)는 그대로 둠, 새 디바이스 드라이버는 추가하지 않음; destination은 `64-apic`의 xAPIC ID |
 | 69 | `69-msi-x-nvme-io` | NVMe I/O CQ를 MSI-X로 전환 — create IO CQ의 CDW11에서 인터럽트 활성화 + IV 1(테이블 엔트리 2번째), I/O 완료 polling 제거, `52`~`62` ext2/셸 스택이 인터럽트 경로로도 동작하는지 재검증 |
-| 70 | `70-nic-virtio` | PCI 기반 virtio-net(modern, `disable-legacy=on`) NIC 드라이버 — vendor capability로 common/notify/device 영역 탐색, feature 협상, receiveq/transmitq virtqueue 설정, 큐별 MSI-X 완료 통지; rtl8139는 MSI 미지원이라 제외; loopback이 없어 박아둔 raw ARP 요청 프레임으로 QEMU user 게이트웨이 응답을 받아 드라이버만 검증 |
-| 71 | `71-ethernet-arp` | 이더넷 프레임 파싱 + ARP 요청/응답 |
-| 72 | `72-ip-icmp` | IPv4 헤더 처리 + ICMP — `ping` 응답으로 검증 |
-| 73 | `73-udp` | UDP 송수신 |
-| 74 | `74-tcp` | TCP 상태 머신(3-way handshake, 데이터 전송, 종료) |
-| 75 | `75-socket-syscall` | BSD 소켓 syscall(`socket`/`bind`/`listen`/`accept`/`connect`/`send`/`recv`) 유저 공간 노출 |
-| 76 | `76-net-apps` | busybox `nc`/`wget` 등으로 실제 네트워크 애플리케이션 실행 검증 |
+| 70 | `70-virtio-pci` | virtio-net PCI 장치 탐색 — vendor/device ID(`0x1AF4`/`0x1041`)로 찾고, vendor capability를 순회해 common/notify/device cfg 영역을 BAR에서 찾아 MMIO로 매핑, common cfg 읽기(`num_queues`)로 매핑 확인; `disable-legacy=on` NIC를 QEMU에 추가. rtl8139는 MSI 미지원이라 제외. 초기화·큐는 71 |
+| 71 | `71-virtio-queue` | `device_status` 초기화 순서 + feature 협상(`VERSION_1`, `MAC`) + receiveq/transmitq virtqueue 세팅(연속 물리 페이지 할당) + 큐별 MSI-X 완료 통지 + receiveq에 빈 패킷 버퍼 올리고 `DRIVER_OK` — 수신 대기 상태까지 |
+| 72 | `72-virtio-arp` | transmitq 송신 + 박아둔 raw ARP 요청 프레임으로 QEMU user 게이트웨이(10.0.2.2) 응답 수신 — 드라이버만 검증; loopback이 없어 이렇게 확인 |
+| 73 | `73-ethernet-arp` | 이더넷 프레임 파싱 + ARP 요청/응답 |
+| 74 | `74-ip-icmp` | IPv4 헤더 처리 + ICMP — `ping` 응답으로 검증 |
+| 75 | `75-udp` | UDP 송수신 |
+| 76 | `76-tcp` | TCP 상태 머신(3-way handshake, 데이터 전송, 종료) |
+| 77 | `77-socket-syscall` | BSD 소켓 syscall(`socket`/`bind`/`listen`/`accept`/`connect`/`send`/`recv`) 유저 공간 노출 |
+| 78 | `78-net-apps` | busybox `nc`/`wget` 등으로 실제 네트워크 애플리케이션 실행 검증 |
 
-12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → Linux ABI 호환 → **37~40에서 64비트 전환** → 외부 바이너리 실행 → **61~62에서 60의 미해결 항목 마무리** → **63~70에서 Multiboot2/APIC/PCIe/NVMe/MSI-X로 하드웨어 확장**(63 Multiboot2로 ACPI RSDP를 받아 64 APIC의 MADT 파싱 전제조건으로 삼고, PCI는 legacy 대신 처음부터 PCIe로, AHCI는 건너뛰고 66~67 NVMe로 `51-ata-pio`를 대체한 뒤 68~69에서 그 NVMe 컨트롤러의 완료 통지를 polling에서 MSI-X로 전환(68 admin CQ, 69 I/O CQ)) → **71~76에서 네트워크 스택**(이 프로젝트의 종착점: busybox `sh`/`nc`/`wget`이 직접 만든 OS 위에서 동작) 순서로 기반을 쌓는다. 네임스페이스/cgroup 기반 컨테이너와 VT-x 기반 하드웨어 가상화(하이퍼바이저)는 OS 기초가 아니라 리눅스 고유 기능/별도 주제이므로 이 로드맵의 범위 밖이다(컨테이너는 필요하면 별도 시리즈로 분리).
+12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → Linux ABI 호환 → **37~40에서 64비트 전환** → 외부 바이너리 실행 → **61~62에서 60의 미해결 항목 마무리** → **63~72에서 Multiboot2/APIC/PCIe/NVMe/MSI-X/virtio-net으로 하드웨어 확장**(63 Multiboot2로 ACPI RSDP를 받아 64 APIC의 MADT 파싱 전제조건으로 삼고, PCI는 legacy 대신 처음부터 PCIe로, AHCI는 건너뛰고 66~67 NVMe로 `51-ata-pio`를 대체한 뒤 68~69에서 그 NVMe 컨트롤러의 완료 통지를 polling에서 MSI-X로 전환(68 admin CQ, 69 I/O CQ)) → **73~78에서 네트워크 스택**(이 프로젝트의 종착점: busybox `sh`/`nc`/`wget`이 직접 만든 OS 위에서 동작) 순서로 기반을 쌓는다. 네임스페이스/cgroup 기반 컨테이너와 VT-x 기반 하드웨어 가상화(하이퍼바이저)는 OS 기초가 아니라 리눅스 고유 기능/별도 주제이므로 이 로드맵의 범위 밖이다(컨테이너는 필요하면 별도 시리즈로 분리).
 
 순서·이름은 진행 중 자유롭게 조정 가능.
 
