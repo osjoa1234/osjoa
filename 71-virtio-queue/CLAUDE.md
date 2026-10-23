@@ -4,7 +4,7 @@
 
 ## 1) 연속 물리 페이지 할당 (`boot/phys_mem.h`, `boot/phys_mem.c`)
 
-`u32 page_alloc_contig(u32 count)`(신규): 비트맵에서 `count`개 연속 빈 페이지를 처음부터 훑어 찾아(first-fit) 모두 사용 중으로 표시하고 첫 페이지의 물리 주소를 반환한다. 못 찾으면 `0`이다. virtqueue 세 영역(descriptor table / available ring / used ring)과 패킷 버퍼는 장치가 물리 주소로 직접 읽고 쓰는데, 영역 안에서는 가상·물리가 이어져야 하므로 한 페이지씩 주는 `page_alloc`으로는 부족하다.
+`u32 page_alloc_contig(u32 count)`(신규): 비트맵에서 `count`개 연속 빈 페이지를 처음부터 훑어 찾아(first-fit) 모두 사용 중으로 표시하고 첫 페이지의 물리 주소를 반환한다. 못 찾으면 `0`이다. virtqueue 세 영역(descriptor table / available ring / used ring)은 장치가 시작 물리 주소 하나만 받고 그 뒤를 선형으로 읽으므로 각 영역 안에서 물리 주소가 이어져야 한다. 큐 크기 256에서는 세 영역이 각각 한 페이지 안에 들어가지만, 한 시작 주소에서 오프셋으로 나눠 쓰려고 한 덩어리로 할당하므로 한 페이지씩 주는 `page_alloc`으로는 부족하다. 패킷 버퍼는 descriptor 하나가 가리키는 버퍼 하나만 연속이면 되고 버퍼끼리는 떨어져 있어도 된다 — 16개를 이 함수로 한 번에 받는 것은 `시작 + i × 2048` 계산이 간단해서이지 필수는 아니다.
 
 ## 2) `boot/virtio_net.c` — 초기화 순서
 
