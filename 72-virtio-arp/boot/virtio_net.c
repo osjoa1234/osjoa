@@ -5,6 +5,7 @@
 #include "apic.h"
 #include "interrupts.h"
 #include "timer.h"
+#include "thread.h"
 
 enum {
     VIRTIO_VENDOR_ID     = 0x1AF4U,
@@ -135,6 +136,7 @@ static u32 g_rx_buf_phys;
 static u32 g_tx_buf_phys;
 static u8  g_mac[6];
 static int g_arp_reply_seen;
+static thread_t *volatile g_arp_waiter;
 static int g_driver_ready;
 
 static const u8 g_guest_ip[4]   = { 10U, 0U, 2U, 15U };
@@ -464,11 +466,13 @@ static void virtio_rx_irq(void)
 {
     g_rx.irq_count++;
     virtio_consume_rx();
+    if (g_arp_waiter) thread_unpark(g_arp_waiter);
 }
 
 static void virtio_tx_irq(void)
 {
     g_tx.irq_count++;
+    if (g_arp_waiter) thread_unpark(g_arp_waiter);
 }
 
 static int virtio_wait_arp_reply(void)
@@ -484,7 +488,9 @@ static int virtio_wait_arp_reply(void)
         if (g_arp_reply_seen && g_tx.used->idx == g_tx.avail_idx && g_rx.irq_count != 0U && g_tx.irq_count != 0U) break;
         if ((int)(timer_ticks() - deadline) >= 0) break;
 
-        __asm__ volatile ("sti; hlt" : : : "memory");
+        g_arp_waiter = thread_current();
+        thread_sleep((deadline - timer_ticks()) * 1000U / timer_hz());
+        g_arp_waiter = 0;
     }
 
     if (flags & RFLAGS_IF) __asm__ volatile ("sti" : : : "memory");
