@@ -254,6 +254,8 @@ void kernel_main(u32 magic, u32 phys_mbi)
     proc_init();
     pipe_init();
 
+    virtio_net_arp_test();
+
     {
         u32 init_pid = proc_spawn("/init");
 

@@ -4,6 +4,7 @@
 #include "phys_mem.h"
 #include "apic.h"
 #include "interrupts.h"
+#include "timer.h"
 
 enum {
     VIRTIO_VENDOR_ID     = 0x1AF4U,
@@ -56,7 +57,7 @@ enum {
     ARP_OP_REQUEST     = 1U,
     ARP_OP_REPLY       = 2U,
 
-    VIRTIO_ARP_WAIT_SPINS = 2000000U
+    VIRTIO_ARP_WAIT_MS = 1000U
 };
 
 #define VIRTIO_COMMON_VADDR (KERNEL_OFFSET + 0x41006000ULL)
@@ -134,6 +135,7 @@ static u32 g_rx_buf_phys;
 static u32 g_tx_buf_phys;
 static u8  g_mac[6];
 static int g_arp_reply_seen;
+static int g_driver_ready;
 
 static const u8 g_guest_ip[4]   = { 10U, 0U, 2U, 15U };
 static const u8 g_gateway_ip[4] = { 10U, 0U, 2U, 2U };
@@ -186,16 +188,6 @@ static int virtio_find_capabilities(u8 bus, u8 device, u8 function)
     }
 
     return have_common && have_notify && have_device ? 0 : -1;
-}
-
-static void virtio_rx_irq(void)
-{
-    g_rx.irq_count++;
-}
-
-static void virtio_tx_irq(void)
-{
-    g_tx.irq_count++;
 }
 
 static u32 virtio_align_up(u32 value, u32 align)
@@ -401,13 +393,13 @@ static int virtio_send_arp_request(void)
     g_tx.avail->idx = g_tx.avail_idx;
     __asm__ volatile("" ::: "memory");
 
-    virtqueue_notify(&g_tx);
-
     console_printf("virtio-net: tx arp who-has ");
     virtio_print_ip(g_gateway_ip);
     console_printf(" tell ");
     virtio_print_ip(g_guest_ip);
     console_printf(" (%u bytes)\n", frame_len);
+
+    virtqueue_notify(&g_tx);
 
     return 0;
 }
@@ -468,17 +460,31 @@ static void virtio_consume_rx(void)
     }
 }
 
+static void virtio_rx_irq(void)
+{
+    g_rx.irq_count++;
+    virtio_consume_rx();
+}
+
+static void virtio_tx_irq(void)
+{
+    g_tx.irq_count++;
+}
+
 static int virtio_wait_arp_reply(void)
 {
     u64 flags;
-    u32 spins;
+    u32 deadline = timer_ticks() + VIRTIO_ARP_WAIT_MS * timer_hz() / 1000U;
 
     __asm__ volatile ("pushfq; pop %0" : "=r" (flags) : : "memory");
 
-    for (spins = 0U; spins < VIRTIO_ARP_WAIT_SPINS; spins++) {
-        __asm__ volatile ("sti; nop; nop; nop; nop; cli" : : : "memory");
-        virtio_consume_rx();
+    for (;;) {
+        __asm__ volatile ("cli" : : : "memory");
+
         if (g_arp_reply_seen && g_tx.used->idx == g_tx.avail_idx && g_rx.irq_count != 0U && g_tx.irq_count != 0U) break;
+        if ((int)(timer_ticks() - deadline) >= 0) break;
+
+        __asm__ volatile ("sti; hlt" : : : "memory");
     }
 
     if (flags & RFLAGS_IF) __asm__ volatile ("sti" : : : "memory");
@@ -586,6 +592,15 @@ void virtio_net_init(void)
     console_set_color(0x0AU);
     console_printf("virtio-net: driver ready status=0x%02X rx used idx=%u tx used idx=%u\n",
                    g_common->device_status, g_rx.used->idx, g_tx.used->idx);
+
+    g_driver_ready = 1;
+}
+
+void virtio_net_arp_test(void)
+{
+    if (!g_driver_ready) return;
+
+    console_set_color(0x0BU);
 
     if (virtio_send_arp_request() != 0) {
         console_set_color(0x0CU);
