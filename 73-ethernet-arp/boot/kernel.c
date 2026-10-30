@@ -256,6 +256,8 @@ void kernel_main(u32 magic, u32 phys_mbi)
     pipe_init();
 
     arp_test();
+    thread_sleep(100U);
+    virtio_net_print_stats();
 
     {
         u32 init_pid = proc_spawn("/init");

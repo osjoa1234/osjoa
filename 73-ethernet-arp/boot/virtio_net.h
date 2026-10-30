@@ -8,8 +8,6 @@ int       virtio_net_ready(void);
 const u8 *virtio_net_mac(void);
 u8       *virtio_net_tx_alloc(void);
 int       virtio_net_tx_submit(u8 *frame, u32 len);
-int       virtio_net_idle(void);
-int       virtio_net_wait(int (*done)(void), u32 ms);
 void      virtio_net_print_stats(void);
 
 #endif

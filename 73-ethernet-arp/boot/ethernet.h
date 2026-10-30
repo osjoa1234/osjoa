@@ -28,6 +28,8 @@ static inline u16 ntohs(u16 value)
 
 extern const u8 ethernet_broadcast_mac[ETH_ALEN];
 
+int  ethernet_ready(void);
+const u8 *ethernet_mac(void);
 void ethernet_rx(const u8 *frame, u32 len);
 int  ethernet_send(const u8 *dst_mac, u16 ethertype, const u8 *payload, u32 len);
 int  ethernet_mac_equal(const u8 *a, const u8 *b);

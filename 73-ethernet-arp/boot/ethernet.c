@@ -25,6 +25,16 @@ void ethernet_print_mac(const u8 *mac)
     }
 }
 
+int ethernet_ready(void)
+{
+    return virtio_net_ready();
+}
+
+const u8 *ethernet_mac(void)
+{
+    return virtio_net_mac();
+}
+
 void ethernet_rx(const u8 *frame, u32 len)
 {
     const struct eth_hdr *eth = (const struct eth_hdr *)frame;
@@ -32,7 +42,7 @@ void ethernet_rx(const u8 *frame, u32 len)
 
     if (len < ETH_HDR_LEN) return;
 
-    if (!ethernet_mac_equal(eth->dst, virtio_net_mac()) && !ethernet_mac_equal(eth->dst, ethernet_broadcast_mac)) return;
+    if (!ethernet_mac_equal(eth->dst, ethernet_mac()) && !ethernet_mac_equal(eth->dst, ethernet_broadcast_mac)) return;
 
     ethertype = ntohs(eth->ethertype);
 
@@ -58,7 +68,7 @@ int ethernet_send(const u8 *dst_mac, u16 ethertype, const u8 *payload, u32 len)
     eth = (struct eth_hdr *)frame;
     for (i = 0U; i < ETH_ALEN; i++) {
         eth->dst[i] = dst_mac[i];
-        eth->src[i] = virtio_net_mac()[i];
+        eth->src[i] = ethernet_mac()[i];
     }
     eth->ethertype = htons(ethertype);
 

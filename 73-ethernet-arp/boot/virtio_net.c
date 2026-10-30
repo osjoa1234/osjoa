@@ -5,8 +5,6 @@
 #include "phys_mem.h"
 #include "apic.h"
 #include "interrupts.h"
-#include "timer.h"
-#include "thread.h"
 
 enum {
     VIRTIO_VENDOR_ID     = 0x1AF4U,
@@ -130,7 +128,6 @@ static u32 g_rx_buf_phys;
 static u32 g_tx_buf_phys;
 static u8  g_mac[6];
 static u32 g_tx_busy;
-static thread_t *volatile g_waiter;
 static int g_driver_ready;
 
 static u8 *virtio_map_region(u64 vaddr, u64 phys, u32 length)
@@ -392,13 +389,11 @@ static void virtio_rx_irq(void)
 {
     g_rx.irq_count++;
     virtio_consume_rx();
-    if (g_waiter) thread_unpark(g_waiter);
 }
 
 static void virtio_tx_irq(void)
 {
     g_tx.irq_count++;
-    if (g_waiter) thread_unpark(g_waiter);
 }
 
 void virtio_net_init(void)
@@ -572,39 +567,6 @@ int virtio_net_tx_submit(u8 *frame, u32 len)
     if (flags & RFLAGS_IF) __asm__ volatile ("sti" : : : "memory");
 
     return 0;
-}
-
-int virtio_net_idle(void)
-{
-    return g_tx.used->idx == g_tx.avail_idx && g_tx.irq_count == g_tx.avail_idx && g_rx.irq_count != 0U;
-}
-
-int virtio_net_wait(int (*done)(void), u32 ms)
-{
-    u64 flags;
-    int result = 0;
-    u32 deadline = timer_ticks() + ms * timer_hz() / 1000U;
-
-    __asm__ volatile ("pushfq; pop %0" : "=r" (flags) : : "memory");
-
-    for (;;) {
-        __asm__ volatile ("cli" : : : "memory");
-
-        if (done()) break;
-
-        if ((int)(timer_ticks() - deadline) >= 0) {
-            result = -1;
-            break;
-        }
-
-        g_waiter = thread_current();
-        thread_sleep((deadline - timer_ticks()) * 1000U / timer_hz());
-        g_waiter = 0;
-    }
-
-    if (flags & RFLAGS_IF) __asm__ volatile ("sti" : : : "memory");
-
-    return result;
 }
 
 void virtio_net_print_stats(void)

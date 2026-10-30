@@ -1,6 +1,7 @@
 #include "arp.h"
 #include "ethernet.h"
-#include "virtio_net.h"
+#include "thread.h"
+#include "timer.h"
 
 enum {
     ARP_PACKET_LEN     = 28,
@@ -35,6 +36,7 @@ struct arp_entry {
 
 static struct arp_entry g_cache[ARP_CACHE_ENTRIES];
 static u32 g_cache_next;
+static thread_t *volatile g_arp_waiter;
 
 static const u8 g_local_ip[4]        = { 10U, 0U, 2U, 15U };
 static const u8 g_gateway_ip[4]      = { 10U, 0U, 2U, 2U };
@@ -103,6 +105,8 @@ static void cache_update(const u8 *ip, const u8 *mac)
 
     cache_store(ip, mac);
 
+    if (g_arp_waiter) thread_unpark(g_arp_waiter);
+
     if (flags & RFLAGS_IF) __asm__ volatile ("sti" : : : "memory");
 }
 
@@ -140,7 +144,7 @@ static int arp_send(u16 oper, const u8 *dst_mac, const u8 *target_mac, const u8 
     pkt.oper  = htons(oper);
 
     for (i = 0U; i < ETH_ALEN; i++) {
-        pkt.sha[i] = virtio_net_mac()[i];
+        pkt.sha[i] = ethernet_mac()[i];
         pkt.tha[i] = target_mac[i];
     }
     for (i = 0U; i < 4U; i++) {
@@ -167,7 +171,7 @@ static int arp_send_reply(const u8 *dst_mac, const u8 *dst_ip)
     console_printf("arp: tx reply ");
     print_ip(g_local_ip);
     console_printf(" is-at ");
-    ethernet_print_mac(virtio_net_mac());
+    ethernet_print_mac(ethernet_mac());
     console_printf(" to ");
     print_ip(dst_ip);
     console_printf("\n");
@@ -210,11 +214,45 @@ void arp_rx(const u8 *packet, u32 len)
     }
 }
 
-static int arp_gateway_resolved(void)
+int arp_resolve(const u8 *ip, u8 *mac_out, u32 ms)
 {
-    u8 mac[ETH_ALEN];
+    u64 flags;
+    int result = 0;
+    u32 deadline = timer_ticks() + ms * timer_hz() / 1000U;
 
-    return arp_cache_lookup(g_gateway_ip, mac) == 0 && virtio_net_idle();
+    if (arp_cache_lookup(ip, mac_out) == 0) return 0;
+
+    if (arp_send_request(ip) != 0) {
+        console_set_color(0x0CU);
+        console_printf("arp: tx buffer unavailable\n");
+        return -1;
+    }
+
+    __asm__ volatile ("pushfq; pop %0" : "=r" (flags) : : "memory");
+
+    for (;;) {
+        __asm__ volatile ("cli" : : : "memory");
+
+        if (arp_cache_lookup(ip, mac_out) == 0) break;
+
+        if ((int)(timer_ticks() - deadline) >= 0) {
+            result = -1;
+            break;
+        }
+
+        g_arp_waiter = thread_current();
+        thread_sleep((deadline - timer_ticks()) * 1000U / timer_hz());
+        g_arp_waiter = 0;
+    }
+
+    if (flags & RFLAGS_IF) __asm__ volatile ("sti" : : : "memory");
+
+    if (result != 0) {
+        console_set_color(0x0CU);
+        console_printf("arp: no reply\n");
+    }
+
+    return result;
 }
 
 void arp_test(void)
@@ -225,22 +263,11 @@ void arp_test(void)
     u8 mac[ETH_ALEN];
     u32 i;
 
-    if (!virtio_net_ready()) return;
+    if (!ethernet_ready()) return;
 
     console_set_color(0x0BU);
 
-    if (arp_send_request(g_gateway_ip) != 0) {
-        console_set_color(0x0CU);
-        console_printf("arp: tx buffer unavailable\n");
-        return;
-    }
-
-    if (virtio_net_wait(arp_gateway_resolved, ARP_WAIT_MS) != 0) {
-        console_set_color(0x0CU);
-        console_printf("arp: no reply\n");
-    }
-
-    if (arp_cache_lookup(g_gateway_ip, mac) == 0) {
+    if (arp_resolve(g_gateway_ip, mac, ARP_WAIT_MS) == 0) {
         console_printf("arp: lookup ");
         print_ip(g_gateway_ip);
         console_printf(" -> ");
@@ -264,11 +291,6 @@ void arp_test(void)
 
     arp_rx((const u8 *)&request, ARP_PACKET_LEN);
 
-    if (virtio_net_wait(virtio_net_idle, ARP_WAIT_MS) != 0) {
-        console_set_color(0x0CU);
-        console_printf("arp: reply not consumed by device\n");
-    }
-
     if (arp_cache_lookup(peer_ip, mac) == 0) {
         console_printf("arp: lookup ");
         print_ip(peer_ip);
@@ -276,6 +298,4 @@ void arp_test(void)
         ethernet_print_mac(mac);
         console_printf("\n");
     }
-
-    virtio_net_print_stats();
 }
