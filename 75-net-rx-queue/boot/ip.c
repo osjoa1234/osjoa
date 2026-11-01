@@ -128,6 +128,7 @@ int ip_send(const u8 *dst_ip, u8 protocol, const u8 *payload, u32 len)
     struct ip_arp_wait *slot = 0;
     int requested = 0;
     int hit = 0;
+    int result = 0;
     u64 flags;
     u32 now;
     u32 i;
@@ -163,6 +164,11 @@ int ip_send(const u8 *dst_ip, u8 protocol, const u8 *payload, u32 len)
         slot->len      = len;
         slot->deadline = now + IP_ARP_WAIT_MAX_MS * timer_hz() / 1000U;
         slot->valid    = 1;
+
+        if (!requested && arp_send_request(dst_ip) != 0) {
+            slot->valid = 0;
+            result = -1;
+        }
     }
 
     if (flags & RFLAGS_IF) __asm__ volatile ("sti" : : : "memory");
@@ -174,9 +180,7 @@ int ip_send(const u8 *dst_ip, u8 protocol, const u8 *payload, u32 len)
         return -1;
     }
 
-    if (!requested) return arp_send_request(dst_ip);
-
-    return 0;
+    return result;
 }
 
 void ip_arp_resolved(const u8 *ip, const u8 *mac)

@@ -12,7 +12,8 @@
 
 ## 2) ARP 대기 큐와 `ip_send` 통합 (`ip.c`)
 
-- `ip_send(dst_ip, protocol, payload, len)`: 이제 블록하지 않는다. ARP 캐시에 있으면 바로 `ip_output`. 없으면 IP 페이로드를 대기 슬롯(4개, 슬롯당 `IP_MAX_PAYLOAD` 1480바이트 고정 배열)에 맡기고 같은 목적지로 이미 요청 중이 아니면 ARP 요청을 보낸 뒤 0을 돌려준다. 슬롯이 없으면 -1. `ip_send_cached`는 삭제.
+- `ip_send(dst_ip, protocol, payload, len)`: 이제 블록하지 않는다. ARP 캐시에 있으면 바로 `ip_output`. 없으면 IP 페이로드를 대기 슬롯(4개, 슬롯당 `IP_MAX_PAYLOAD` 1480바이트 고정 배열)에 맡기고 같은 목적지로 이미 요청 중이 아니면 ARP 요청을 보낸 뒤 0을 돌려준다. 슬롯이 없으면 -1. `ip_send_cached`는 삭제. ARP 요청 전송이 실패하면(송신 슬롯 없음) 방금 넣은 대기 슬롯을 비우고 -1을 돌려준다. 슬롯을 남긴 채 -1을 주면 호출한 쪽은 실패로 아는데 패킷이 큐에 남고, 같은 IP의 다음 `ip_send`가 요청이 나간 줄 알고 ARP 요청을 건너뛴다. 요청 전송은 슬롯을 채운 `cli` 구간 안에서 한다(구간 밖이면 그 사이 다른 `ip_send`가 이 슬롯을 보고 요청이 나갔다고 판단할 수 있다).
+- `ip_send`의 리턴 의미: 0은 "보냈다"가 아니라 "접수했다"(TX 큐에 넣었거나 ARP 대기 큐에 맡김)이고, -1은 페이로드 초과·송신 슬롯 부족·대기 큐 가득 참처럼 호스트 안에서 바로 알 수 있는 실패뿐이다. 접수 뒤의 만료·유실은 알리지 않는다. IP가 전달을 보장하지 않는 프로토콜이라 도착 확인은 위 계층(ICMP는 reply 대기, TCP는 ACK 재전송)이 한다.
 - 슬롯 확인·캐시 재확인·슬롯 채우기는 한 번의 `cli` 구간에서 한다. 캐시 확인 직후 ARP reply가 처리돼 ARP 대기 큐를 비우고 가면, 뒤늦게 슬롯에 넣은 패킷이 아무도 안 깨우는 채로 남기 때문이다.
 - `ip_arp_resolved(ip, mac)`: `arp_rx`가 `cache_update` 직후 부른다(reply와 request 둘 다 MAC을 배우므로). 그 IP로 가는 대기 슬롯을 하나씩 스택으로 꺼내(`cli` 구간) 슬롯을 비운 뒤 구간 밖에서 `ip_output`으로 보낸다. 전송 중에 인터럽트를 막지 않는다.
 - 대기 패킷 만료: `IP_ARP_WAIT_MAX_MS`(1000ms)가 지난 슬롯은 다음 `ip_send` 때 로그(`ip: arp wait packet to ... expired`)와 함께 비운다. 타이머가 따로 없어 만료는 새 송신이 올 때만 정리된다.
@@ -50,7 +51,7 @@ net_rx: dropped=0
 
 **와이어 바이트 검증**: `-object filter-dump`로 pcap을 떠서 파이썬으로 해석했다(일회성 확인, Makefile에 없음). 순서는 ARP 3개(요청·reply·우리가 보낸 reply) → ping 3쌍 → `10.0.2.99`행 echo reply(MAC `02:00:00:00:00:99`) → ARP 요청(`who-has 10.0.2.3`) → slirp reply → `10.0.2.3`행 echo reply(MAC `52:55:0a:00:02:03`). IP 헤더·ICMP 체크섬 재계산 결과 모두 0, TTL 64. 대기 패킷이 ARP reply 이후에야 와이어에 나가는 것을 확인했다.
 
-**검증 방법의 한계**: 링 큐 가득 참(`net_rx: dropped`), ARP 대기 큐 가득 참(`ip: arp wait queue full`), 대기 만료(`expired`) 경로는 실행되지 않았다.
+**검증 방법의 한계**: 링 큐 가득 참(`net_rx: dropped`), ARP 대기 큐 가득 참(`ip: arp wait queue full`), 대기 만료(`expired`), ARP 요청 전송 실패 시 슬롯 회수 경로는 실행되지 않았다.
 
 ### 기존 서브시스템과의 정합 확인
 
