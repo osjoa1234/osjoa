@@ -1,0 +1,284 @@
+#include "arp.h"
+#include "ethernet.h"
+#include "ip.h"
+#include "thread.h"
+#include "timer.h"
+
+enum {
+    ARP_PACKET_LEN     = 28,
+    ARP_HTYPE_ETHERNET = 1,
+    ARP_PTYPE_IPV4     = 0x0800,
+    ARP_OP_REQUEST     = 1,
+    ARP_OP_REPLY       = 2,
+
+    ARP_CACHE_ENTRIES  = 8,
+    ARP_WAIT_MS        = 1000U,
+
+    RFLAGS_IF = 1U << 9
+};
+
+struct arp_packet {
+    u16 htype;
+    u16 ptype;
+    u8  hlen;
+    u8  plen;
+    u16 oper;
+    u8  sha[ETH_ALEN];
+    u8  spa[4];
+    u8  tha[ETH_ALEN];
+    u8  tpa[4];
+} __attribute__((packed));
+
+struct arp_entry {
+    u8  ip[4];
+    u8  mac[ETH_ALEN];
+    int valid;
+};
+
+static struct arp_entry g_cache[ARP_CACHE_ENTRIES];
+static u32 g_cache_next;
+static thread_t *volatile g_arp_waiter;
+
+static const u8 g_zero_mac[ETH_ALEN] = { 0U, 0U, 0U, 0U, 0U, 0U };
+
+static void cache_store(const u8 *ip, const u8 *mac)
+{
+    struct arp_entry *slot = 0;
+    u32 i;
+
+    for (i = 0U; i < ARP_CACHE_ENTRIES; i++) {
+        if (g_cache[i].valid && ip_equal(g_cache[i].ip, ip)) {
+            slot = &g_cache[i];
+            break;
+        }
+    }
+
+    if (slot != 0 && ethernet_mac_equal(slot->mac, mac)) return;
+
+    if (slot == 0) {
+        for (i = 0U; i < ARP_CACHE_ENTRIES; i++) {
+            if (!g_cache[i].valid) {
+                slot = &g_cache[i];
+                break;
+            }
+        }
+    }
+
+    if (slot == 0) {
+        slot = &g_cache[g_cache_next % ARP_CACHE_ENTRIES];
+        g_cache_next++;
+    }
+
+    for (i = 0U; i < 4U; i++) slot->ip[i] = ip[i];
+    for (i = 0U; i < ETH_ALEN; i++) slot->mac[i] = mac[i];
+    slot->valid = 1;
+
+    console_printf("arp: cache ");
+    ip_print(ip);
+    console_printf(" -> ");
+    ethernet_print_mac(mac);
+    console_printf("\n");
+}
+
+static void cache_update(const u8 *ip, const u8 *mac)
+{
+    u64 flags;
+
+    __asm__ volatile ("pushfq; pop %0; cli" : "=r" (flags) : : "memory");
+
+    cache_store(ip, mac);
+
+    if (g_arp_waiter) thread_unpark(g_arp_waiter);
+
+    if (flags & RFLAGS_IF) __asm__ volatile ("sti" : : : "memory");
+}
+
+int arp_cache_lookup(const u8 *ip, u8 *mac_out)
+{
+    u64 flags;
+    int found = -1;
+    u32 i;
+    u32 j;
+
+    __asm__ volatile ("pushfq; pop %0; cli" : "=r" (flags) : : "memory");
+
+    for (i = 0U; i < ARP_CACHE_ENTRIES; i++) {
+        if (g_cache[i].valid && ip_equal(g_cache[i].ip, ip)) {
+            for (j = 0U; j < ETH_ALEN; j++) mac_out[j] = g_cache[i].mac[j];
+            found = 0;
+            break;
+        }
+    }
+
+    if (flags & RFLAGS_IF) __asm__ volatile ("sti" : : : "memory");
+
+    return found;
+}
+
+static int arp_send(u16 oper, const u8 *dst_mac, const u8 *target_mac, const u8 *target_ip)
+{
+    struct arp_packet pkt;
+    u32 i;
+
+    pkt.htype = htons(ARP_HTYPE_ETHERNET);
+    pkt.ptype = htons(ARP_PTYPE_IPV4);
+    pkt.hlen  = ETH_ALEN;
+    pkt.plen  = 4U;
+    pkt.oper  = htons(oper);
+
+    for (i = 0U; i < ETH_ALEN; i++) {
+        pkt.sha[i] = ethernet_mac()[i];
+        pkt.tha[i] = target_mac[i];
+    }
+    for (i = 0U; i < 4U; i++) {
+        pkt.spa[i] = ip_local[i];
+        pkt.tpa[i] = target_ip[i];
+    }
+
+    return ethernet_send(dst_mac, ETHERTYPE_ARP, (const u8 *)&pkt, ARP_PACKET_LEN);
+}
+
+int arp_send_request(const u8 *target_ip)
+{
+    console_printf("arp: tx request who-has ");
+    ip_print(target_ip);
+    console_printf(" tell ");
+    ip_print(ip_local);
+    console_printf("\n");
+
+    return arp_send(ARP_OP_REQUEST, ethernet_broadcast_mac, g_zero_mac, target_ip);
+}
+
+static int arp_send_reply(const u8 *dst_mac, const u8 *dst_ip)
+{
+    console_printf("arp: tx reply ");
+    ip_print(ip_local);
+    console_printf(" is-at ");
+    ethernet_print_mac(ethernet_mac());
+    console_printf(" to ");
+    ip_print(dst_ip);
+    console_printf("\n");
+
+    return arp_send(ARP_OP_REPLY, dst_mac, dst_mac, dst_ip);
+}
+
+void arp_rx(const u8 *packet, u32 len)
+{
+    const struct arp_packet *pkt = (const struct arp_packet *)packet;
+    u16 oper;
+
+    if (len < ARP_PACKET_LEN) return;
+    if (ntohs(pkt->htype) != ARP_HTYPE_ETHERNET || ntohs(pkt->ptype) != ARP_PTYPE_IPV4) return;
+    if (pkt->hlen != ETH_ALEN || pkt->plen != 4U) return;
+    if (!ip_equal(pkt->tpa, ip_local)) return;
+
+    oper = ntohs(pkt->oper);
+
+    if (oper == ARP_OP_REPLY) {
+        console_printf("arp: rx reply ");
+        ip_print(pkt->spa);
+        console_printf(" is-at ");
+        ethernet_print_mac(pkt->sha);
+        console_printf("\n");
+        cache_update(pkt->spa, pkt->sha);
+        return;
+    }
+
+    if (oper == ARP_OP_REQUEST) {
+        console_printf("arp: rx request who-has ");
+        ip_print(pkt->tpa);
+        console_printf(" tell ");
+        ip_print(pkt->spa);
+        console_printf("\n");
+        cache_update(pkt->spa, pkt->sha);
+        if (arp_send_reply(pkt->sha, pkt->spa) != 0) {
+            console_printf("arp: tx buffer unavailable\n");
+        }
+    }
+}
+
+int arp_resolve(const u8 *ip, u8 *mac_out, u32 ms)
+{
+    u64 flags;
+    int result = 0;
+    u32 deadline = timer_ticks() + ms * timer_hz() / 1000U;
+
+    if (arp_cache_lookup(ip, mac_out) == 0) return 0;
+
+    if (arp_send_request(ip) != 0) {
+        console_set_color(0x0CU);
+        console_printf("arp: tx buffer unavailable\n");
+        return -1;
+    }
+
+    __asm__ volatile ("pushfq; pop %0" : "=r" (flags) : : "memory");
+
+    for (;;) {
+        __asm__ volatile ("cli" : : : "memory");
+
+        if (arp_cache_lookup(ip, mac_out) == 0) break;
+
+        if ((int)(timer_ticks() - deadline) >= 0) {
+            result = -1;
+            break;
+        }
+
+        g_arp_waiter = thread_current();
+        thread_sleep((deadline - timer_ticks()) * 1000U / timer_hz());
+        g_arp_waiter = 0;
+    }
+
+    if (flags & RFLAGS_IF) __asm__ volatile ("sti" : : : "memory");
+
+    if (result != 0) {
+        console_set_color(0x0CU);
+        console_printf("arp: no reply\n");
+    }
+
+    return result;
+}
+
+void arp_test(void)
+{
+    static const u8 peer_ip[4]         = { 10U, 0U, 2U, 99U };
+    static const u8 peer_mac[ETH_ALEN] = { 0x02U, 0x00U, 0x00U, 0x00U, 0x00U, 0x99U };
+    struct arp_packet request;
+    u8 mac[ETH_ALEN];
+    u32 i;
+
+    if (!ethernet_ready()) return;
+
+    console_set_color(0x0BU);
+
+    if (arp_resolve(ip_gateway, mac, ARP_WAIT_MS) == 0) {
+        console_printf("arp: lookup ");
+        ip_print(ip_gateway);
+        console_printf(" -> ");
+        ethernet_print_mac(mac);
+        console_printf("\n");
+    }
+
+    request.htype = htons(ARP_HTYPE_ETHERNET);
+    request.ptype = htons(ARP_PTYPE_IPV4);
+    request.hlen  = ETH_ALEN;
+    request.plen  = 4U;
+    request.oper  = htons(ARP_OP_REQUEST);
+    for (i = 0U; i < ETH_ALEN; i++) {
+        request.sha[i] = peer_mac[i];
+        request.tha[i] = 0U;
+    }
+    for (i = 0U; i < 4U; i++) {
+        request.spa[i] = peer_ip[i];
+        request.tpa[i] = ip_local[i];
+    }
+
+    arp_rx((const u8 *)&request, ARP_PACKET_LEN);
+
+    if (arp_cache_lookup(peer_ip, mac) == 0) {
+        console_printf("arp: lookup ");
+        ip_print(peer_ip);
+        console_printf(" -> ");
+        ethernet_print_mac(mac);
+        console_printf("\n");
+    }
+}

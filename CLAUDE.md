@@ -121,12 +121,13 @@ GUI: WSL2 + WSLg(Windows 11)면 QEMU 창이 자동으로 뜸. 안 뜨면 `-nogra
 | 72 | `72-virtio-arp` | transmitq 송신 + 박아둔 raw ARP 요청 프레임으로 QEMU user 게이트웨이(10.0.2.2) 응답 수신 — 드라이버만 검증; loopback이 없어 이렇게 확인 |
 | 73 | `73-ethernet-arp` | 이더넷 프레임 파싱 + ARP 요청/응답 |
 | 74 | `74-ip-icmp` | IPv4 헤더 처리 + ICMP — `ping` 응답으로 검증 |
-| 75 | `75-udp` | UDP 송수신 |
-| 76 | `76-tcp` | TCP 상태 머신(3-way handshake, 데이터 전송, 종료) |
-| 77 | `77-socket-syscall` | BSD 소켓 syscall(`socket`/`bind`/`listen`/`accept`/`connect`/`send`/`recv`) 유저 공간 노출 |
-| 78 | `78-net-apps` | busybox `nc`/`wget` 등으로 실제 네트워크 애플리케이션 실행 검증 |
+| 75 | `75-net-rx-queue` | 수신 경로를 인터럽트 핸들러 밖으로 + ARP 보류 큐 — MSI-X 핸들러는 프레임을 고정 크기 링 큐에 넣고 수신 스레드를 깨우기만 하고 `ethernet_rx` 이후는 스레드에서 처리(리눅스의 hardirq→softirq 분리), MAC을 모르는 송신 패킷은 고정 배열 슬롯에 맡겨두고 ARP 요청만 보낸 뒤 reply가 오면 내보냄(리눅스 neighbour `arp_queue`) — `ip_send`/`ip_send_cached`를 `ip_send` 하나로 통합, 74에서 실행 못 한 캐시 miss 경로를 pcap으로 검증; `kheap`에 잠금이 없어 두 큐 모두 동적 할당 없이 고정 배열 |
+| 76 | `76-udp` | UDP 송수신 |
+| 77 | `77-tcp` | TCP 상태 머신(3-way handshake, 데이터 전송, 종료) |
+| 78 | `78-socket-syscall` | BSD 소켓 syscall(`socket`/`bind`/`listen`/`accept`/`connect`/`send`/`recv`) 유저 공간 노출 |
+| 79 | `79-net-apps` | busybox `nc`/`wget` 등으로 실제 네트워크 애플리케이션 실행 검증 |
 
-12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → Linux ABI 호환 → **37~40에서 64비트 전환** → 외부 바이너리 실행 → **61~62에서 60의 미해결 항목 마무리** → **63~72에서 Multiboot2/APIC/PCIe/NVMe/MSI-X/virtio-net으로 하드웨어 확장**(63 Multiboot2로 ACPI RSDP를 받아 64 APIC의 MADT 파싱 전제조건으로 삼고, PCI는 legacy 대신 처음부터 PCIe로, AHCI는 건너뛰고 66~67 NVMe로 `51-ata-pio`를 대체한 뒤 68~69에서 그 NVMe 컨트롤러의 완료 통지를 polling에서 MSI-X로 전환(68 admin CQ, 69 I/O CQ)) → **73~78에서 네트워크 스택**(이 프로젝트의 종착점: busybox `sh`/`nc`/`wget`이 직접 만든 OS 위에서 동작) 순서로 기반을 쌓는다. 네임스페이스/cgroup 기반 컨테이너와 VT-x 기반 하드웨어 가상화(하이퍼바이저)는 OS 기초가 아니라 리눅스 고유 기능/별도 주제이므로 이 로드맵의 범위 밖이다(컨테이너는 필요하면 별도 시리즈로 분리).
+12 이후는 메모리 관리 → 타이머/커널 모니터 → 커널 쓰레드/스케줄링 → 사용자 모드/시스템 콜 → 사용자 프로그램 적재/프로세스 → 파일 시스템/셸 → Linux ABI 호환 → **37~40에서 64비트 전환** → 외부 바이너리 실행 → **61~62에서 60의 미해결 항목 마무리** → **63~72에서 Multiboot2/APIC/PCIe/NVMe/MSI-X/virtio-net으로 하드웨어 확장**(63 Multiboot2로 ACPI RSDP를 받아 64 APIC의 MADT 파싱 전제조건으로 삼고, PCI는 legacy 대신 처음부터 PCIe로, AHCI는 건너뛰고 66~67 NVMe로 `51-ata-pio`를 대체한 뒤 68~69에서 그 NVMe 컨트롤러의 완료 통지를 polling에서 MSI-X로 전환(68 admin CQ, 69 I/O CQ)) → **73~79에서 네트워크 스택**(이 프로젝트의 종착점: busybox `sh`/`nc`/`wget`이 직접 만든 OS 위에서 동작) 순서로 기반을 쌓는다. 네임스페이스/cgroup 기반 컨테이너와 VT-x 기반 하드웨어 가상화(하이퍼바이저)는 OS 기초가 아니라 리눅스 고유 기능/별도 주제이므로 이 로드맵의 범위 밖이다(컨테이너는 필요하면 별도 시리즈로 분리).
 
 순서·이름은 진행 중 자유롭게 조정 가능.
 
