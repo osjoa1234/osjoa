@@ -1,0 +1,29 @@
+#ifndef PCI_H
+#define PCI_H
+
+#include "console.h"
+
+struct pci_msix {
+    u8  bus;
+    u8  device;
+    u8  function;
+    u8  cap;
+    u32 table_size;
+    volatile u32 *table;
+};
+
+void pci_scan(void);
+u8   pci_config_read8(u8 bus, u8 device, u8 function, u8 offset);
+u16  pci_config_read16(u8 bus, u8 device, u8 function, u8 offset);
+u32  pci_config_read32(u8 bus, u8 device, u8 function, u8 offset);
+int  pci_find_by_id(u16 vendor_id, u16 device_id, u8 *out_bus, u8 *out_device, u8 *out_function);
+u8   pci_next_capability(u8 bus, u8 device, u8 function, u8 previous, u8 cap_id);
+int  pci_find_by_class(u8 class_code, u8 subclass, u8 *out_bus, u8 *out_device, u8 *out_function);
+void pci_enable_device(u8 bus, u8 device, u8 function);
+u64  pci_bar_address(u8 bus, u8 device, u8 function, u32 bar_index);
+
+int  pci_msix_open(u8 bus, u8 device, u8 function, struct pci_msix *msix);
+void pci_msix_set_entry(struct pci_msix *msix, u32 index, u8 vector, u32 apic_id);
+void pci_msix_start(struct pci_msix *msix);
+
+#endif
