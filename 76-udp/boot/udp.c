@@ -7,8 +7,9 @@
 enum {
     UDP_PORT_SLOTS       = 4,
     UDP_PORT_ECHO        = 7,
-    UDP_PORT_DNS         = 53,
-    UDP_PORT_DNS_CLIENT  = 40053,
+    UDP_PORT_DISCARD     = 9,
+    UDP_PORT_CLIENT      = 40000,
+    UDP_PORT_HOST        = 5000,
     UDP_PORT_PEER        = 5000,
     UDP_PORT_UNBOUND     = 9999,
     UDP_WAIT_MS          = 1000U,
@@ -44,8 +45,10 @@ struct udp_port {
 
 static struct udp_port g_ports[UDP_PORT_SLOTS];
 
-static thread_t *volatile g_dns_waiter;
-static volatile int g_dns_done;
+static const u8 udp_hello[] = { 'h', 'e', 'l', 'l', 'o', ' ', 'u', 'd', 'p' };
+
+static thread_t *volatile g_host_waiter;
+static volatile int g_host_done;
 
 static u16 udp_checksum(const u8 *src_ip, const u8 *dst_ip, const u8 *hdr, const u8 *data, u32 data_len)
 {
@@ -161,19 +164,33 @@ static void udp_echo_handler(const u8 *src_ip, u16 src_port, const u8 *data, u32
     }
 }
 
-static void udp_dns_handler(const u8 *src_ip, u16 src_port, const u8 *data, u32 len)
+static void udp_discard_handler(const u8 *src_ip, u16 src_port, const u8 *data, u32 len)
 {
     (void)data;
 
-    console_printf("udp: dns rx from ");
+    console_printf("udp: discard rx from ");
     ip_print(src_ip);
     console_printf(":%u (%u bytes)\n", src_port, len);
-
-    g_dns_done = 1;
-    if (g_dns_waiter) thread_unpark(g_dns_waiter);
 }
 
-static int udp_wait_dns(u32 ms)
+static void udp_host_handler(const u8 *src_ip, u16 src_port, const u8 *data, u32 len)
+{
+    u32 i;
+    int match = len == sizeof(udp_hello);
+
+    for (i = 0U; match && i < len; i++) {
+        if (data[i] != udp_hello[i]) match = 0;
+    }
+
+    console_printf("udp: host rx from ");
+    ip_print(src_ip);
+    console_printf(":%u (%u bytes, %s)\n", src_port, len, match ? "match" : "mismatch");
+
+    g_host_done = 1;
+    if (g_host_waiter) thread_unpark(g_host_waiter);
+}
+
+static int udp_wait_host(u32 ms)
 {
     u64 flags;
     int result = 0;
@@ -184,16 +201,16 @@ static int udp_wait_dns(u32 ms)
     for (;;) {
         __asm__ volatile ("cli" : : : "memory");
 
-        if (g_dns_done) break;
+        if (g_host_done) break;
 
         if ((int)(timer_ticks() - deadline) >= 0) {
             result = -1;
             break;
         }
 
-        g_dns_waiter = thread_current();
+        g_host_waiter = thread_current();
         thread_sleep((deadline - timer_ticks()) * 1000U / timer_hz());
-        g_dns_waiter = 0;
+        g_host_waiter = 0;
     }
 
     if (flags & RFLAGS_IF) __asm__ volatile ("sti" : : : "memory");
@@ -251,47 +268,39 @@ static void udp_inject(const u8 *peer_mac, const u8 *peer_ip, u16 src_port, u16 
 
 void udp_test(void)
 {
-    static const u8 dns_ip[IP_ALEN]    = { 10U, 0U, 2U, 3U };
+    static const u8 host_ip[IP_ALEN]   = { 10U, 0U, 2U, 2U };
     static const u8 peer_ip[IP_ALEN]   = { 10U, 0U, 2U, 99U };
     static const u8 peer_mac[ETH_ALEN] = { 0x02U, 0x00U, 0x00U, 0x00U, 0x00U, 0x99U };
-    static const u8 dns_query[] = {
-        0x12U, 0x34U, 0x01U, 0x00U, 0x00U, 0x01U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
-        7U, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3U, 'c', 'o', 'm', 0U,
-        0x00U, 0x01U, 0x00U, 0x01U
-    };
-    static const u8 hello[] = { 'h', 'e', 'l', 'l', 'o', ' ', 'u', 'd', 'p' };
 
     if (!ethernet_ready()) return;
 
     console_set_color(0x0BU);
 
-    if (udp_bind(UDP_PORT_ECHO, udp_echo_handler) != 0 || udp_bind(UDP_PORT_DNS_CLIENT, udp_dns_handler) != 0) {
+    if (udp_bind(UDP_PORT_ECHO, udp_echo_handler) != 0 || udp_bind(UDP_PORT_DISCARD, udp_discard_handler) != 0 ||
+        udp_bind(UDP_PORT_CLIENT, udp_host_handler) != 0) {
         console_set_color(0x0CU);
         console_printf("udp: bind failed\n");
         return;
     }
 
-    g_dns_done = 0;
+    g_host_done = 0;
 
-    if (udp_send(dns_ip, UDP_PORT_DNS, UDP_PORT_DNS_CLIENT, dns_query, sizeof(dns_query)) != 0) {
+    if (udp_send(host_ip, UDP_PORT_HOST, UDP_PORT_CLIENT, udp_hello, sizeof(udp_hello)) != 0) {
         console_set_color(0x0CU);
-        console_printf("udp: dns query tx failed\n");
-    } else if (udp_wait_dns(UDP_WAIT_MS) != 0) {
+        console_printf("udp: host tx failed\n");
+    } else if (udp_wait_host(UDP_WAIT_MS) != 0) {
         console_set_color(0x0CU);
-        console_printf("udp: no dns reply\n");
+        console_printf("udp: no host reply\n");
     }
 
     console_set_color(0x0BU);
 
-    udp_inject(peer_mac, peer_ip, UDP_PORT_PEER, UDP_PORT_ECHO, hello, sizeof(hello), UDP_INJECT_VALID);
+    udp_inject(peer_mac, peer_ip, UDP_PORT_PEER, UDP_PORT_DISCARD, udp_hello, sizeof(udp_hello), UDP_INJECT_NO_CSUM);
     thread_sleep(100U);
 
-    udp_inject(peer_mac, peer_ip, UDP_PORT_PEER, UDP_PORT_ECHO, hello, sizeof(hello), UDP_INJECT_NO_CSUM);
+    udp_inject(peer_mac, peer_ip, UDP_PORT_PEER, UDP_PORT_DISCARD, udp_hello, sizeof(udp_hello), UDP_INJECT_BAD_CSUM);
     thread_sleep(100U);
 
-    udp_inject(peer_mac, peer_ip, UDP_PORT_PEER, UDP_PORT_ECHO, hello, sizeof(hello), UDP_INJECT_BAD_CSUM);
-    thread_sleep(100U);
-
-    udp_inject(peer_mac, peer_ip, UDP_PORT_PEER, UDP_PORT_UNBOUND, hello, sizeof(hello), UDP_INJECT_VALID);
+    udp_inject(peer_mac, peer_ip, UDP_PORT_PEER, UDP_PORT_UNBOUND, udp_hello, sizeof(udp_hello), UDP_INJECT_VALID);
     thread_sleep(100U);
 }
