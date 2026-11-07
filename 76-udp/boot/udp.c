@@ -2,23 +2,13 @@
 #include "ethernet.h"
 #include "thread.h"
 #include "timer.h"
-#include "net_rx.h"
 
 enum {
     UDP_PORT_SLOTS       = 4,
     UDP_PORT_ECHO        = 7,
-    UDP_PORT_DISCARD     = 9,
     UDP_PORT_CLIENT      = 40000,
     UDP_PORT_HOST        = 5000,
-    UDP_PORT_PEER        = 5000,
-    UDP_PORT_UNBOUND     = 9999,
-    UDP_WAIT_MS          = 1000U,
-    UDP_TEST_DATA_MAX    = 32,
-
-    UDP_INJECT_VALID     = 0,
-    UDP_INJECT_NO_CSUM   = 1,
-    UDP_INJECT_BAD_CSUM  = 2,
-
+    UDP_WAIT_MS          = 3000U,
     RFLAGS_IF = 1U << 9
 };
 
@@ -47,8 +37,8 @@ static struct udp_port g_ports[UDP_PORT_SLOTS];
 
 static const u8 udp_hello[] = { 'h', 'e', 'l', 'l', 'o', ' ', 'u', 'd', 'p' };
 
-static thread_t *volatile g_host_waiter;
-static volatile int g_host_done;
+static thread_t *volatile g_echo_waiter;
+static volatile int g_echo_done;
 
 static u16 udp_checksum(const u8 *src_ip, const u8 *dst_ip, const u8 *hdr, const u8 *data, u32 data_len)
 {
@@ -162,35 +152,12 @@ static void udp_echo_handler(const u8 *src_ip, u16 src_port, const u8 *data, u32
     if (udp_send(src_ip, src_port, UDP_PORT_ECHO, data, len) != 0) {
         console_printf("udp: echo tx dropped\n");
     }
+
+    g_echo_done = 1;
+    if (g_echo_waiter) thread_unpark(g_echo_waiter);
 }
 
-static void udp_discard_handler(const u8 *src_ip, u16 src_port, const u8 *data, u32 len)
-{
-    (void)data;
-
-    console_printf("udp: discard rx from ");
-    ip_print(src_ip);
-    console_printf(":%u (%u bytes)\n", src_port, len);
-}
-
-static void udp_host_handler(const u8 *src_ip, u16 src_port, const u8 *data, u32 len)
-{
-    u32 i;
-    int match = len == sizeof(udp_hello);
-
-    for (i = 0U; match && i < len; i++) {
-        if (data[i] != udp_hello[i]) match = 0;
-    }
-
-    console_printf("udp: host rx from ");
-    ip_print(src_ip);
-    console_printf(":%u (%u bytes, %s)\n", src_port, len, match ? "match" : "mismatch");
-
-    g_host_done = 1;
-    if (g_host_waiter) thread_unpark(g_host_waiter);
-}
-
-static int udp_wait_host(u32 ms)
+static int udp_wait_echo(u32 ms)
 {
     u64 flags;
     int result = 0;
@@ -201,16 +168,16 @@ static int udp_wait_host(u32 ms)
     for (;;) {
         __asm__ volatile ("cli" : : : "memory");
 
-        if (g_host_done) break;
+        if (g_echo_done) break;
 
         if ((int)(timer_ticks() - deadline) >= 0) {
             result = -1;
             break;
         }
 
-        g_host_waiter = thread_current();
+        g_echo_waiter = thread_current();
         thread_sleep((deadline - timer_ticks()) * 1000U / timer_hz());
-        g_host_waiter = 0;
+        g_echo_waiter = 0;
     }
 
     if (flags & RFLAGS_IF) __asm__ volatile ("sti" : : : "memory");
@@ -218,89 +185,29 @@ static int udp_wait_host(u32 ms)
     return result;
 }
 
-static void udp_inject(const u8 *peer_mac, const u8 *peer_ip, u16 src_port, u16 dst_port, const u8 *data, u32 len, int mode)
-{
-    u8 frame[ETH_HDR_LEN + IP_HDR_LEN + UDP_HDR_LEN + UDP_TEST_DATA_MAX];
-    struct eth_hdr *eth = (struct eth_hdr *)frame;
-    struct ip_hdr *ip = (struct ip_hdr *)(frame + ETH_HDR_LEN);
-    struct udp_hdr *udp = (struct udp_hdr *)(frame + ETH_HDR_LEN + IP_HDR_LEN);
-    u8 *payload = frame + ETH_HDR_LEN + IP_HDR_LEN + UDP_HDR_LEN;
-    u16 checksum;
-    u32 i;
-
-    if (len > UDP_TEST_DATA_MAX) return;
-
-    for (i = 0U; i < ETH_ALEN; i++) {
-        eth->dst[i] = ethernet_mac()[i];
-        eth->src[i] = peer_mac[i];
-    }
-    eth->ethertype = htons(ETHERTYPE_IPV4);
-
-    ip->version_ihl = 0x45U;
-    ip->dscp_ecn    = 0U;
-    ip->total_len   = htons((u16)(IP_HDR_LEN + UDP_HDR_LEN + len));
-    ip->id          = htons(1U);
-    ip->flags_frag  = htons(0x4000U);
-    ip->ttl         = 64U;
-    ip->protocol    = IP_PROTO_UDP;
-    ip->checksum    = 0U;
-    for (i = 0U; i < IP_ALEN; i++) {
-        ip->src[i] = peer_ip[i];
-        ip->dst[i] = ip_local[i];
-    }
-    ip->checksum = htons(ip_checksum((const u8 *)ip, IP_HDR_LEN));
-
-    udp->src_port = htons(src_port);
-    udp->dst_port = htons(dst_port);
-    udp->length   = htons((u16)(UDP_HDR_LEN + len));
-    udp->checksum = 0U;
-    for (i = 0U; i < len; i++) payload[i] = data[i];
-
-    if (mode != UDP_INJECT_NO_CSUM) {
-        checksum = udp_checksum(peer_ip, ip_local, (const u8 *)udp, payload, len);
-        if (checksum == 0U) checksum = 0xFFFFU;
-        if (mode == UDP_INJECT_BAD_CSUM) checksum ^= 0x0001U;
-        udp->checksum = htons(checksum);
-    }
-
-    net_rx_enqueue(frame, ETH_HDR_LEN + IP_HDR_LEN + UDP_HDR_LEN + len);
-}
-
 void udp_test(void)
 {
-    static const u8 host_ip[IP_ALEN]   = { 10U, 0U, 2U, 2U };
-    static const u8 peer_ip[IP_ALEN]   = { 10U, 0U, 2U, 99U };
-    static const u8 peer_mac[ETH_ALEN] = { 0x02U, 0x00U, 0x00U, 0x00U, 0x00U, 0x99U };
+    static const u8 host_ip[IP_ALEN] = { 10U, 0U, 2U, 2U };
 
     if (!ethernet_ready()) return;
 
     console_set_color(0x0BU);
 
-    if (udp_bind(UDP_PORT_ECHO, udp_echo_handler) != 0 || udp_bind(UDP_PORT_DISCARD, udp_discard_handler) != 0 ||
-        udp_bind(UDP_PORT_CLIENT, udp_host_handler) != 0) {
+    if (udp_bind(UDP_PORT_ECHO, udp_echo_handler) != 0) {
         console_set_color(0x0CU);
         console_printf("udp: bind failed\n");
         return;
     }
 
-    g_host_done = 0;
+    g_echo_done = 0;
 
     if (udp_send(host_ip, UDP_PORT_HOST, UDP_PORT_CLIENT, udp_hello, sizeof(udp_hello)) != 0) {
         console_set_color(0x0CU);
         console_printf("udp: host tx failed\n");
-    } else if (udp_wait_host(UDP_WAIT_MS) != 0) {
+    } else if (udp_wait_echo(UDP_WAIT_MS) != 0) {
         console_set_color(0x0CU);
-        console_printf("udp: no host reply\n");
+        console_printf("udp: no echo rx\n");
     }
 
     console_set_color(0x0BU);
-
-    udp_inject(peer_mac, peer_ip, UDP_PORT_PEER, UDP_PORT_DISCARD, udp_hello, sizeof(udp_hello), UDP_INJECT_NO_CSUM);
-    thread_sleep(100U);
-
-    udp_inject(peer_mac, peer_ip, UDP_PORT_PEER, UDP_PORT_DISCARD, udp_hello, sizeof(udp_hello), UDP_INJECT_BAD_CSUM);
-    thread_sleep(100U);
-
-    udp_inject(peer_mac, peer_ip, UDP_PORT_PEER, UDP_PORT_UNBOUND, udp_hello, sizeof(udp_hello), UDP_INJECT_VALID);
-    thread_sleep(100U);
 }
